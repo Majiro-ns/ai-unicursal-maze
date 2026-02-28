@@ -34,6 +34,7 @@ async def generate_maze(
     debug_path_scoring: bool | None = Form(False),
     min_edge_size: int | None = Form(None),
     spur_length: int | None = Form(None),
+    maze_weight: float | None = Form(None),   # T-10: 顔らしさ↔迷路性トレードオフ
 ):
     raw_bytes = await file.read()
 
@@ -93,6 +94,7 @@ async def generate_maze(
         debug_path_scoring=debug_path_scoring_bool,
         min_edge_size=min_edge_size,
         spur_length=spur_length,
+        maze_weight=maze_weight,   # T-10
     )
 
     if stage in {"line", "unicursal", "maze"}:

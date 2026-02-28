@@ -810,11 +810,13 @@ def generate_unicursal_maze(image: Image.Image, options: MazeOptions) -> MazeRes
         if a is not None and b is not None:
             start_candidates_override = [a, b]
 
+    _maze_weight = float(options.maze_weight) if options.maze_weight is not None else 0.0
     path_points = find_unicursal_like_path(
         graph,
         features=feature_summary,
         debug=debug_path_scoring,
         start_candidates_override=start_candidates_override,
+        maze_weight=_maze_weight,   # T-10
     )
     dummy_branches: List[List[PathPoint]] | None = None
     if len(path_points) >= 2:

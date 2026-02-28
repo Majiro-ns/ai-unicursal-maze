@@ -48,6 +48,7 @@ def _call_api(
         "debug_path_scoring": "true" if debug_path_scoring else "false",
         "spur_length": str(int(spur_length)),
         "min_edge_size": str(int(min_edge_size)),
+        "maze_weight": f"{maze_weight:.2f}",   # T-10
     }
 
     response = requests.post(API_URL, files=files, data=data, timeout=60)
@@ -118,6 +119,16 @@ def main() -> None:
         options=["default", "detail"],
         index=0,
         format_func=lambda x: "標準" if x == "default" else "細部重視 (detail)",
+    )
+
+    st.sidebar.markdown("### トレードオフ設定")
+    maze_weight = st.sidebar.slider(
+        "迷路性 ↔ 顔らしさ (maze_weight)",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.05,
+        help="0.0=元画像の顔に沿ったパス（顔らしさ優先） / 1.0=曲がりくねった迷路（迷路性優先）",
     )
 
     st.sidebar.markdown("### 迷路の粗さ")

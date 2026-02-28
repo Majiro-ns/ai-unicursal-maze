@@ -145,6 +145,7 @@ def _beam_search_path(
     max_steps: int,
     beam_width: int = 20,
     branch_factor: int = 4,
+    maze_weight: float = 0.0,   # T-10: 顔らしさ↔迷路性トレードオフ
 ) -> List[int]:
     """
     Beam search to expand multiple paths and keep the best-scoring candidates.
@@ -173,11 +174,11 @@ def _beam_search_path(
 
         scored = sorted(
             candidates,
-            key=lambda p: _score_path(graph, p, features),
+            key=lambda p: _score_path(graph, p, features, maze_weight=maze_weight),
             reverse=True,
         )
         beams = scored[:beam_width]
-        if _score_path(graph, beams[0], features) >= _score_path(graph, best, features):
+        if _score_path(graph, beams[0], features, maze_weight=maze_weight) >= _score_path(graph, best, features, maze_weight=maze_weight):
             best = beams[0]
 
     return best
@@ -190,6 +191,7 @@ def find_unicursal_like_path(
     max_steps: int = 10_000,
     debug: bool = False,
     start_candidates_override: List[int] | None = None,
+    maze_weight: float = 0.0,   # T-10: 顔らしさ↔迷路性トレードオフ（0.0=顔らしさ, 1.0=迷路性）
 ) -> List[PathPoint]:
     """
     Evaluate multiple starts with beam search, return the best single path.
@@ -210,6 +212,7 @@ def find_unicursal_like_path(
             start,
             features,
             max_steps=max_steps,
+            maze_weight=maze_weight,
         )
         if not path_nodes:
             continue
@@ -219,6 +222,7 @@ def find_unicursal_like_path(
             path_nodes,
             features,
             return_components=True,
+            maze_weight=maze_weight,
         )
 
         if debug and features is not None:
@@ -271,6 +275,7 @@ def _score_path(
     features: FeatureSummary | None = None,
     *,
     return_components: bool = False,
+    maze_weight: float = 0.0,   # T-10: 顔らしさ↔迷路性トレードオフ（0.0=顔らしさ, 1.0=迷路性）
 ) -> tuple[float, float, float, float, float, float] | float:
     """
     Path scoring:
@@ -351,14 +356,17 @@ def _score_path(
                 hits += 1
         boundary_score = hits / n_total
 
-    # Favor longer paths while keeping weight/face cues important.
-    # Landmark score boosted to 30% to prioritize routes through facial features.
+    # T-10: 顔らしさ↔迷路性トレードオフ
+    # maze_weight=0.0 → 既存式と完全一致（顔らしさ優先）
+    # maze_weight=1.0 → curvatureが低い（曲がりくねった）パスを高評価（迷路性優先）
+    face_component = (1.0 - maze_weight) * (0.3 * landmark_score + 0.1 * boundary_score)
+    maze_component = maze_weight * 0.4 * (1.0 - curvature_score)
     score = (
         0.3 * length_score
         + 0.25 * weight_score
         + 0.05 * curvature_score
-        + 0.3 * landmark_score
-        + 0.1 * boundary_score
+        + face_component
+        + maze_component
     )
 
     if return_components:

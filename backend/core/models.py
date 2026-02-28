@@ -30,6 +30,8 @@ class MazeOptions:
     # T-7: 迷路の粗さオプション
     min_edge_size: Optional[int] = None  # スケルトン前ノイズ除去閾値（小さいほどノイズ保持、大きいほど除去）
     spur_length: Optional[int] = None    # スパー最大長（小さいほど細かい突起保持、大きいほど除去＝迷路が粗い）
+    # T-10: 顔らしさ↔迷路性トレードオフ
+    maze_weight: Optional[float] = None  # 0.0=顔らしさ優先, 1.0=迷路性優先（デフォルト0.0）
 
 
 @dataclass
