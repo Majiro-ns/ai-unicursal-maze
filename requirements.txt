@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+streamlit
+Pillow
+python-multipart
+requests
+numpy
+scikit-image==0.26.0
+mediapipe==0.10.14
