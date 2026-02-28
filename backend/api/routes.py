@@ -32,6 +32,8 @@ async def generate_maze(
     use_face_canny_detail: bool | None = Form(True),
     stage: str | None = Form(None),
     debug_path_scoring: bool | None = Form(False),
+    min_edge_size: int | None = Form(None),
+    spur_length: int | None = Form(None),
 ):
     raw_bytes = await file.read()
 
@@ -89,6 +91,8 @@ async def generate_maze(
         use_face_canny_detail=use_face_canny_detail_bool,
         stage=stage,
         debug_path_scoring=debug_path_scoring_bool,
+        min_edge_size=min_edge_size,
+        spur_length=spur_length,
     )
 
     if stage in {"line", "unicursal", "maze"}:
@@ -117,5 +121,8 @@ async def generate_maze(
         "timings": result.timings or {},
         "num_solutions": result.num_solutions,
         "difficulty_score": result.difficulty_score,
+        "turn_count": result.turn_count,          # T-9
+        "path_length": result.path_length,        # T-9
+        "dead_end_count": result.dead_end_count,  # T-9
         "path_weight_debug_base64": debug_png_base64,
     }

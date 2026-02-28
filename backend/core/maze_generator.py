@@ -986,9 +986,13 @@ def generate_unicursal_maze(image: Image.Image, options: MazeOptions) -> MazeRes
 </svg>
 """
 
-    # T-8: solver 評価結果を MazeResult に格納
+    # T-8/T-9: solver 評価結果を MazeResult に格納
     _num_sol = solve_result.num_solutions if solve_result is not None else None
     _diff_score = solve_result.difficulty_score if solve_result is not None else None
+    _turn_count = solve_result.turn_count if solve_result is not None else None
+    _path_length = solve_result.path_length if solve_result is not None else None
+    # T-9: 袋小路の数を計算（degree==1のノード = 端点）
+    _dead_end_count = sum(1 for node in graph.nodes.values() if node.degree == 1)
     return MazeResult(
         maze_id=maze_id,
         svg=svg,
@@ -996,4 +1000,7 @@ def generate_unicursal_maze(image: Image.Image, options: MazeOptions) -> MazeRes
         path_weight_debug_png=debug_path_png,
         num_solutions=_num_sol,
         difficulty_score=_diff_score,
+        turn_count=_turn_count,         # T-9: 曲がり角の数
+        path_length=_path_length,       # T-9: 経路長
+        dead_end_count=_dead_end_count, # T-9: 袋小路の数
     )

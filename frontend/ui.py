@@ -239,6 +239,9 @@ def main() -> None:
             timings = payload.get("timings") or {}
             num_solutions = payload.get("num_solutions")
             difficulty_score = payload.get("difficulty_score")
+            turn_count = payload.get("turn_count")        # T-9
+            path_length = payload.get("path_length")      # T-9
+            dead_end_count = payload.get("dead_end_count")  # T-9
 
             if not png_b64:
                 st.error("PNG データがレスポンスに含まれていません。")
@@ -302,6 +305,12 @@ def main() -> None:
 
                 if difficulty_score is not None:
                     st.write(f"・難易度スコア: {difficulty_score:.3f}")
+                if turn_count is not None:
+                    st.write(f"・曲がり角の数: {turn_count}")
+                if path_length is not None:
+                    st.write(f"・経路長（ノード数）: {path_length}")
+                if dead_end_count is not None:
+                    st.write(f"・袋小路の数: {dead_end_count}")
 
         except requests.RequestException as exc:
             st.error(f"API 呼び出し中にエラーが発生しました: {exc}")
