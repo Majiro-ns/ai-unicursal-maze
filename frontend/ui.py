@@ -25,6 +25,7 @@ def _call_api(
     debug_path_scoring: bool = False,
     spur_length: int = 4,
     min_edge_size: int = 8,
+    maze_weight: float = 0.0,    # T-10 追加
 ) -> dict:
     files = {
         "file": (
@@ -242,6 +243,7 @@ def main() -> None:
                     debug_path_scoring=False,
                     spur_length=int(spur_length),
                     min_edge_size=int(min_edge_size),
+                    maze_weight=float(maze_weight),    # T-10 追加
                 )
 
             maze_id = payload.get("maze_id", "maze")
