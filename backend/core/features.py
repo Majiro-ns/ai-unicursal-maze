@@ -50,6 +50,88 @@ class FeatureSummary:
             self.silhouette_boxes = []
 
 
+def compute_face_band_from_mask(face_mask: np.ndarray) -> np.ndarray:
+    """
+    face_mask のバウンディングボックスを顔帯域マスクとして返す。
+
+    T-12: MediaPipe 等の外部依存なしに face_band_mask を自動生成する
+    フォールバック実装。face_mask が存在する場合に extract_features_from_edges
+    から自動呼び出しされる。
+
+    Args:
+        face_mask: shape=(H, W) の bool 配列
+
+    Returns:
+        shape=(H, W) の bool 配列。face_mask の bounding box 全体が True。
+    """
+    h, w = face_mask.shape
+    result = np.zeros((h, w), dtype=bool)
+    ys, xs = np.where(face_mask)
+    if len(ys) == 0:
+        return result
+    y_min, y_max = int(ys.min()), int(ys.max())
+    x_min, x_max = int(xs.min()), int(xs.max())
+    result[y_min : y_max + 1, x_min : x_max + 1] = True
+    return result
+
+
+def compute_geometric_landmark_mask(face_mask: np.ndarray) -> np.ndarray:
+    """
+    face_mask のバウンディングボックスから目・鼻・口の領域を幾何学的に推定する。
+
+    T-12: MediaPipe 等が利用できない環境での顔パーツ推定フォールバック。
+    推定領域（顔 bbox からの比率）:
+      - 左目 : 高さ 20%〜45%、幅  5%〜45%
+      - 右目 : 高さ 20%〜45%、幅 55%〜95%
+      - 鼻   : 高さ 40%〜65%、幅 35%〜65%
+      - 口   : 高さ 62%〜82%、幅 25%〜75%
+
+    結果は face_mask との AND を取るため、シルエット外には広がらない。
+
+    Args:
+        face_mask: shape=(H, W) の bool 配列
+
+    Returns:
+        shape=(H, W) の bool 配列
+    """
+    h, w = face_mask.shape
+    result = np.zeros((h, w), dtype=bool)
+    ys, xs = np.where(face_mask)
+    if len(ys) == 0:
+        return result
+
+    y_min, y_max = int(ys.min()), int(ys.max())
+    x_min, x_max = int(xs.min()), int(xs.max())
+    fh = max(1, y_max - y_min)
+    fw = max(1, x_max - x_min)
+
+    def _region(
+        top_r: float, bot_r: float, left_r: float, right_r: float
+    ) -> tuple[int, int, int, int]:
+        t = y_min + int(fh * top_r)
+        b = y_min + max(1, int(fh * bot_r))
+        l = x_min + int(fw * left_r)
+        r = x_min + max(1, int(fw * right_r))
+        return t, b, l, r
+
+    # 左目
+    t, b, l, r = _region(0.20, 0.45, 0.05, 0.45)
+    result[t:b, l:r] = True
+    # 右目
+    t, b, l, r = _region(0.20, 0.45, 0.55, 0.95)
+    result[t:b, l:r] = True
+    # 鼻
+    t, b, l, r = _region(0.40, 0.65, 0.35, 0.65)
+    result[t:b, l:r] = True
+    # 口
+    t, b, l, r = _region(0.62, 0.82, 0.25, 0.75)
+    result[t:b, l:r] = True
+
+    # シルエット外を除外
+    result = np.logical_and(result, face_mask)
+    return result
+
+
 def extract_features_from_edges(
     edges: np.ndarray,
     face_mask: Optional[np.ndarray] = None,
@@ -188,6 +270,13 @@ def extract_features_from_edges(
         face_mask_resized = None
         landmark_mask_resized = None
 
+    # T-12: face_mask から face_band_mask と geometric landmark を自動生成
+    face_band_mask_auto: Optional[np.ndarray] = None
+    if face_mask_resized is not None and face_mask_resized.any():
+        face_band_mask_auto = compute_face_band_from_mask(face_mask_resized)
+        if landmark_mask_resized is None:
+            landmark_mask_resized = compute_geometric_landmark_mask(face_mask_resized)
+
     return FeatureSummary(
         centroid=(x_mean, y_mean),
         bounding_boxes=[(x_min, y_min, x_max, y_max)],
@@ -197,5 +286,6 @@ def extract_features_from_edges(
         refined_silhouette_mask=refined_silhouette_mask,
         face_mask=face_mask_resized,
         landmark_mask=landmark_mask_resized,
+        face_band_mask=face_band_mask_auto,
     )
 
