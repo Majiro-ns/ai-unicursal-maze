@@ -146,3 +146,46 @@ def test_routes_response_includes_num_solutions():
     src = inspect.getsource(rt)
     assert "num_solutions" in src, "routes.py が num_solutions をレスポンスに含めていない"
     assert "difficulty_score" in src, "routes.py が difficulty_score をレスポンスに含めていない"
+
+
+# ---------------------------------------------------------------------------
+# T-8-8: 一意解評価関数 has_unique_solution / evaluate_uniqueness（M-8）
+# ---------------------------------------------------------------------------
+def test_has_unique_solution_and_evaluate_uniqueness():
+    """
+    has_unique_solution は解が1本のとき True、0本または2本以上で False。
+    evaluate_uniqueness は (num_solutions, is_unique) を返す。
+    """
+    from backend.core.graph_builder import Edge, MazeGraph, Node
+    from backend.core.solver import evaluate_uniqueness, has_unique_solution
+
+    # 直線グラフ: 1解
+    nodes = {i: Node(id=i, x=i, y=0, degree=2 if 0 < i < 2 else 1, weight=None) for i in range(3)}
+    edges = [Edge(id=0, from_id=0, to_id=1, length=1.0), Edge(id=1, from_id=1, to_id=2, length=1.0)]
+    graph = MazeGraph(nodes=nodes, edges=edges)
+    assert has_unique_solution(graph, 0, 2) is True
+    n, unique = evaluate_uniqueness(graph, 0, 2)
+    assert n == 1 and unique is True
+
+    # 解なし（非連結）
+    nodes2 = {0: Node(id=0, x=0, y=0, degree=0, weight=None), 1: Node(id=1, x=1, y=0, degree=0, weight=None)}
+    graph2 = MazeGraph(nodes=nodes2, edges=[])
+    assert has_unique_solution(graph2, 0, 1) is False
+    n2, u2 = evaluate_uniqueness(graph2, 0, 1)
+    assert n2 == 0 and u2 is False
+
+    # 2解（四角形）
+    nodes3 = {
+        i: Node(id=i, x=i % 2, y=i // 2, degree=2, weight=None)
+        for i in range(4)
+    }
+    edges3 = [
+        Edge(id=0, from_id=0, to_id=1, length=1.0),
+        Edge(id=1, from_id=1, to_id=2, length=1.0),
+        Edge(id=2, from_id=2, to_id=3, length=1.0),
+        Edge(id=3, from_id=3, to_id=0, length=1.0),
+    ]
+    graph3 = MazeGraph(nodes=nodes3, edges=edges3)
+    assert has_unique_solution(graph3, 0, 2) is False
+    n3, u3 = evaluate_uniqueness(graph3, 0, 2, max_solutions=2)
+    assert n3 == 2 and u3 is False

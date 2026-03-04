@@ -357,9 +357,10 @@ def _score_path(
         boundary_score = hits / n_total
 
     # T-10: 顔らしさ↔迷路性トレードオフ
-    # maze_weight=0.0 → 既存式と完全一致（顔らしさ優先）
-    # maze_weight=1.0 → curvatureが低い（曲がりくねった）パスを高評価（迷路性優先）
-    face_component = (1.0 - maze_weight) * (0.3 * landmark_score + 0.1 * boundary_score)
+    # T-11: 顔らしさ側の係数を強化（landmark 0.30→0.35, boundary 0.10→0.15）
+    # maze_weight=0.0 → 顔らしさ優先（ランドマーク・境界通過を強く評価）
+    # maze_weight=1.0 → 迷路性優先（曲がりくねったパスを高評価）
+    face_component = (1.0 - maze_weight) * (0.35 * landmark_score + 0.15 * boundary_score)
     maze_component = maze_weight * 0.4 * (1.0 - curvature_score)
     score = (
         0.3 * length_score
@@ -372,3 +373,32 @@ def _score_path(
     if return_components:
         return score, length_score, weight_score, curvature_score, landmark_score, boundary_score
     return score
+
+
+def compute_path_heatmap(
+    path: List[PathPoint],
+    width: int,
+    height: int,
+) -> List[List[float]]:
+    """
+    T-11: パス密度ヒートマップ（デバッグ・可視化用）
+
+    パスが通過した各ピクセルの頻度を 2D グリッドとして返す。
+    顔の特定部位（目・口等）にパスが集中しているか確認するために使用する。
+
+    Args:
+        path:   PathPoint のリスト
+        width:  グリッドの横幅（ピクセル数）
+        height: グリッドの縦幅（ピクセル数）
+
+    Returns:
+        heatmap[y][x] = 通過回数（float）の 2D リスト（height × width）
+        範囲外の点は無視される。
+    """
+    heatmap: List[List[float]] = [[0.0] * width for _ in range(height)]
+    for pt in path:
+        x = int(round(pt.x))
+        y = int(round(pt.y))
+        if 0 <= y < height and 0 <= x < width:
+            heatmap[y][x] += 1.0
+    return heatmap

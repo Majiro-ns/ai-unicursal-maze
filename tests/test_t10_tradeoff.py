@@ -10,10 +10,9 @@ T-10: 元画像らしさと迷路性のトレードオフ設計 テスト
 
 CHECK-9 テスト期待値の根拠:
   - T-10-1: MazeOptions に maze_weight フィールドが定義済み（models.py T-10修正）。
-  - T-10-2: maze_weight=0.0 のスコア式は既存式と完全一致。
-      face_component = 1.0 * (0.30*lm + 0.10*bd) = 0.30*lm + 0.10*bd（元の重み）。
-      maze_component = 0.0 * 0.40 * ... = 0。
-      → 総スコア = 0.30*length + 0.25*weight + 0.05*curvature + 0.30*landmark + 0.10*boundary。
+  - T-10-2: maze_weight=0.0 のとき顔らしさ側のスコアが効く。
+      face_component = 1.0 * (0.35*lm + 0.15*bd)（T-11 で 0.30/0.10→0.35/0.15 に強化）。
+      maze_component = 0.0。features=None 時は landmark=boundary=0 で score = 0.30*L + 0.25*W + 0.05*C。
   - T-10-3: maze_weight=1.0 では face_component=0 → landmark無効・boundary無効。
       landmark/boundary が高くてもスコアは変わらない。
   - T-10-4: maze_weight=1.0 では maze_component = 0.40*(1-curvature)。
@@ -97,20 +96,13 @@ def test_maze_options_has_maze_weight_field():
 
 def test_score_path_maze_weight_zero_equals_original():
     """
-    maze_weight=0.0 のスコアは既存式（0.30*landmark + 0.10*boundary）と完全一致する。
+    maze_weight=0.0 かつ features=None のとき、face_component=0 で
+    score = 0.30*length + 0.25*weight + 0.05*curvature となる。
 
-    根拠:
-      face_component = (1-0.0) * (0.30*lm + 0.10*bd) = 0.30*lm + 0.10*bd
-      maze_component = 0.0 * 0.40 * (1-curvature) = 0
-      → 元の式と同一: 0.30*L + 0.25*W + 0.05*C + 0.30*lm + 0.10*bd
-
-    features=None のためlandmark_score=0, boundary_score=0 で検証する。
-    この場合: score = 0.30*length + 0.25*weight + 0.05*curvature（maze_weight無関係）
+    根拠: features=None → landmark_score=0, boundary_score=0 → face_component=0。
     手計算: 5ノードパス(直線), weight=0.5, n_total=5
-      length_score = min(1.0, 5/5) = 1.0
-      weight_score = (0.5*5)/5 = 0.5
-      curvature_score = 1.0（直線）
-      score_mw0 = 0.30*1.0 + 0.25*0.5 + 0.05*1.0 + 0 + 0 = 0.30 + 0.125 + 0.05 = 0.475
+      length_score=1.0, weight_score=0.5, curvature_score=1.0
+      score_mw0 = 0.30 + 0.125 + 0.05 = 0.475
     """
     graph = _make_simple_graph(n_nodes=5, weight=0.5)
     path_nodes = list(range(5))
@@ -126,15 +118,10 @@ def test_score_path_maze_weight_zero_equals_original():
 
 def test_score_path_maze_weight_one_ignores_face_score():
     """
-    maze_weight=1.0 では face_component=0 となり、landmark/boundary の有無がスコアに影響しない。
+    maze_weight=1.0 では face_component=0 となり、landmark/boundary がスコアに効かない。
 
-    根拠:
-      face_component = (1-1.0) * (0.30*lm + 0.10*bd) = 0
-      → landmark_score=0/boundary_score=0 と同じスコアになる（features=None の場合と一致）。
-
-    直線5ノードパス（curvature=1.0）の場合:
-      maze_component = 1.0 * 0.40 * (1-1.0) = 0
-      score = 0.30*1.0 + 0.25*0.5 + 0.05*1.0 + 0 + 0 = 0.475
+    根拠: face_component = (1-1.0) * (...) = 0。features=None なので landmark=boundary=0。
+    直線5ノードパスでは maze_component=0（curvature=1.0）→ score = 0.475（maze_weight=0 と同じ）。
     """
     graph = _make_simple_graph(n_nodes=5, weight=0.5)
     path_nodes = list(range(5))
