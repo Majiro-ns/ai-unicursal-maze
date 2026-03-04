@@ -769,6 +769,26 @@ def generate_unicursal_maze(image: Image.Image, options: MazeOptions) -> MazeRes
         face_mask=face_mask,
         landmark_mask=landmark_edges,
     )
+    # T-12: face_band を FeatureSummary に渡し、apply_feature_weights で髪・顔帯域を優先
+    h_e, w_e = edges.shape
+    if line_mode == "detail" or any(
+        getattr(options, k, None) is not None
+        for k in ("face_band_top", "face_band_bottom", "face_band_left", "face_band_right")
+    ):
+        from .line_drawing import _build_face_band_mask
+
+        top_r = 0.2 if getattr(options, "face_band_top", None) is None else float(options.face_band_top)
+        bottom_r = 0.8 if getattr(options, "face_band_bottom", None) is None else float(options.face_band_bottom)
+        left_r = 0.0 if getattr(options, "face_band_left", None) is None else float(options.face_band_left)
+        right_r = 1.0 if getattr(options, "face_band_right", None) is None else float(options.face_band_right)
+        top_r, bottom_r = max(0.0, min(1.0, top_r)), max(0.0, min(1.0, bottom_r))
+        left_r, right_r = max(0.0, min(1.0, left_r)), max(0.0, min(1.0, right_r))
+        if bottom_r <= top_r:
+            bottom_r = min(1.0, top_r + 0.1)
+        if right_r <= left_r:
+            right_r = min(1.0, left_r + 0.1)
+        feature_summary.face_band_mask = _build_face_band_mask(h_e, w_e, top_r, bottom_r, left_r, right_r)
+
     _min_edge_size = getattr(options, "min_edge_size", None) or 8
     skeleton = edges_to_skeleton(edges, min_edge_size=_min_edge_size)
     _spur_length = getattr(options, "spur_length", None)
@@ -781,7 +801,7 @@ def generate_unicursal_maze(image: Image.Image, options: MazeOptions) -> MazeRes
 
             inside = np.logical_and(skeleton, face_mask)
             outside = np.logical_and(skeleton, np.logical_not(face_mask))
-            outside = morphology.remove_small_objects(outside, min_size=comp_out, connectivity=2)
+            outside = morphology.remove_small_objects(outside, max_size=max(0, comp_out - 1), connectivity=2)
             inside = remove_short_spurs(inside, max_length=spur_in)
             outside = remove_short_spurs(outside, max_length=spur_out)
             skeleton = np.logical_or(inside, outside)
@@ -922,12 +942,27 @@ def generate_unicursal_maze(image: Image.Image, options: MazeOptions) -> MazeRes
         goal_id = coord_to_id.get(goal_coord)
         num_solutions_hint = None
         if start_id is not None and goal_id is not None:
-            num_solutions_hint = count_solutions_on_graph(
+            from .solver import evaluate_uniqueness
+
+            num_solutions_hint, is_unique = evaluate_uniqueness(
                 graph,
                 start_id,
                 goal_id,
                 max_solutions=2,
             )
+            if num_solutions_hint == 0:
+                logger.warning(
+                    "T-8: No solution between start and goal (maze_id=%s start=%s goal=%s).",
+                    maze_id,
+                    start_id,
+                    goal_id,
+                )
+            elif not is_unique:
+                logger.warning(
+                    "T-8: Multiple solutions detected (maze_id=%s num_solutions=%s).",
+                    maze_id,
+                    num_solutions_hint,
+                )
         solve_result = solve_path(path_points, num_solutions_hint=num_solutions_hint)
 
     edge_count = int(skeleton.sum())
