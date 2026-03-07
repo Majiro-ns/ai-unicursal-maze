@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-密度迷路 Phase 1 プロトタイプのテスト（M-12）。
-01a §6.1 受け入れ基準: 入口1・出口1・解経路1本、連結性。
+密度迷路 Phase 1/2 テスト。
+Phase 1（M-12）: 01a §6.1 受け入れ基準: 入口1・出口1・解経路1本、連結性。
+Phase 2: 多領域セグメンテーション・テクスチャ割り当て・解ヒューリスティクス・可視化改善。
 """
 from __future__ import annotations
 
@@ -101,3 +102,297 @@ def test_density_maze_unique_path_between_entrance_exit():
     # 隣接性
     for i in range(len(path) - 1):
         assert path[i + 1] in adj.get(path[i], []), f"path[{i}] and path[{i+1}] are not adjacent"
+
+
+# ============================================================
+# Phase 2 テスト
+# ============================================================
+
+from backend.core.density.segment import segment_by_luminance, segment_single_region
+from backend.core.density.texture import (
+    TextureType,
+    PRESET_FACE,
+    PRESET_GENERIC,
+    PRESET_LANDSCAPE,
+    assign_cell_textures,
+    compute_gradient_angles,
+)
+from backend.core.density.grid_builder import (
+    CellGrid,
+    build_cell_grid_with_texture,
+)
+from backend.core.density.entrance_exit import find_entrance_exit_heuristic
+
+
+def _make_gradient_image(w: int = 64, h: int = 64) -> Image.Image:
+    """左が暗く右が明るいグラデーション画像。"""
+    arr = np.tile(np.linspace(0, 255, w, dtype=np.uint8), (h, 1))
+    return Image.fromarray(arr, mode="L")
+
+
+def _make_checkerboard(w: int = 64, h: int = 64) -> Image.Image:
+    """暗い・明るいチェッカーボード画像（セグメンテーション検証用）。"""
+    arr = np.zeros((h, w), dtype=np.uint8)
+    arr[::2, ::2] = 200
+    arr[1::2, 1::2] = 200
+    arr[::2, 1::2] = 50
+    arr[1::2, ::2] = 50
+    return Image.fromarray(arr, mode="L")
+
+
+# ---------- セグメンテーション ----------
+
+def test_segment_single_region_shape():
+    """segment_single_region は入力と同形の全1配列を返す。"""
+    img = _make_small_image(32, 32)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=32)
+    labels = segment_single_region(gray)
+    assert labels.shape == gray.shape
+    assert np.all(labels == 1)
+
+
+def test_segment_multi_region_n_labels():
+    """segment_by_luminance は n_clusters 種類のラベルを返す。"""
+    img = _make_checkerboard(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=64)
+    labels = segment_by_luminance(gray, n_clusters=4)
+    assert labels.shape == gray.shape
+    unique_labels = np.unique(labels)
+    # チェッカーボードは2値なので2〜4ラベルになる
+    assert len(unique_labels) >= 2
+    assert len(unique_labels) <= 4
+
+
+def test_segment_label_order_dark_is_zero():
+    """ラベル 0 が最暗クラスタ、ラベル n-1 が最明クラスタであること。"""
+    img = _make_gradient_image(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=64)
+    labels = segment_by_luminance(gray, n_clusters=4)
+    # 左列（暗い）の代表ラベル < 右列（明るい）の代表ラベル
+    left_label = int(np.median(labels[:, :8]))
+    right_label = int(np.median(labels[:, -8:]))
+    assert left_label <= right_label, (
+        f"暗い領域のラベル({left_label}) > 明るい領域のラベル({right_label})"
+    )
+
+
+def test_segment_n_clusters_1():
+    """n_clusters=1 のとき全ラベルが 0。"""
+    img = _make_small_image(32, 32)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=32)
+    labels = segment_by_luminance(gray, n_clusters=1)
+    assert np.all(labels == 0)
+
+
+# ---------- テクスチャ割り当て ----------
+
+def test_texture_assign_cells_shape():
+    """assign_cell_textures の出力形状が grid と一致する。"""
+    img = _make_checkerboard(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=64)
+    label_map = segment_by_luminance(gray, n_clusters=4)
+    dummy_grid = CellGrid(rows=8, cols=8, luminance=np.zeros((8, 8)), walls=[])
+    tex = assign_cell_textures(dummy_grid, label_map, PRESET_FACE)
+    assert tex.shape == (8, 8)
+    assert all(isinstance(tex[r, c], TextureType) for r in range(8) for c in range(8))
+
+
+def test_texture_preset_face_contains_directional():
+    """PRESET_FACE には DIRECTIONAL テクスチャが含まれる（髪・背景）。"""
+    assert TextureType.DIRECTIONAL in PRESET_FACE.values()
+
+
+def test_texture_preset_generic_all_random():
+    """PRESET_GENERIC は全て RANDOM。"""
+    assert all(v == TextureType.RANDOM for v in PRESET_GENERIC.values())
+
+
+# ---------- グラジエント方向 ----------
+
+def test_gradient_angles_shape():
+    """compute_gradient_angles の出力形状が grid サイズと一致する。"""
+    img = _make_gradient_image(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=64)
+    angles = compute_gradient_angles(gray, grid_rows=8, grid_cols=8)
+    assert angles.shape == (8, 8)
+    assert angles.dtype == np.float64
+
+
+def test_gradient_angles_horizontal_image():
+    """水平グラジエント画像では cos(angle) が大きい（水平方向のグラジエント）。"""
+    img = _make_gradient_image(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=64)
+    angles = compute_gradient_angles(gray, grid_rows=4, grid_cols=8)
+    # 水平グラジエントなら angle ≈ 0、cos(angle) ≈ 1 が多数を占める
+    cos_vals = np.abs(np.cos(angles))
+    assert float(np.mean(cos_vals)) > 0.5
+
+
+# ---------- テクスチャ付きグリッド ----------
+
+def test_build_with_texture_directional_wall_count():
+    """build_cell_grid_with_texture が正しい数の壁リストを返す。"""
+    img = _make_small_image(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=64)
+    rows, cols = 4, 4
+    all_directional = np.full((rows, cols), TextureType.DIRECTIONAL, dtype=object)
+    angles = np.zeros((rows, cols), dtype=np.float64)
+    grid = build_cell_grid_with_texture(gray, rows, cols, all_directional, angles)
+    # 期待壁数: rows*(cols-1) + cols*(rows-1)
+    expected = rows * (cols - 1) + cols * (rows - 1)
+    assert len(grid.walls) == expected
+
+
+def test_build_with_texture_directional_weights_differ():
+    """DIRECTIONAL テクスチャでは壁の重みにバリエーションが生まれる。"""
+    img = _make_gradient_image(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=64)
+    rows, cols = 6, 6
+    all_directional = np.full((rows, cols), TextureType.DIRECTIONAL, dtype=object)
+    angles = compute_gradient_angles(gray, rows, cols)
+    grid = build_cell_grid_with_texture(gray, rows, cols, all_directional, angles, bias_strength=0.5)
+    weights = [w for _, _, w in grid.walls]
+    # bias ありなのでランダムより重みのばらつきがある（std > 0）
+    assert float(np.std(weights)) > 0.0
+
+
+# ---------- 解ヒューリスティクス ----------
+
+def test_entrance_exit_heuristic_valid_path():
+    """find_entrance_exit_heuristic が有効な解経路を返す。"""
+    img = _make_small_image(32, 32)
+    result = generate_density_maze(img, grid_size=4, max_side=32, use_heuristic=True)
+    path = result.solution_path
+    assert len(path) >= 1
+    assert path[0] == result.entrance
+    assert path[-1] == result.exit_cell
+    assert len(path) == len(set(path)), "解経路に重複セルがある"
+
+
+def test_entrance_exit_heuristic_gradient_image():
+    """グラデーション画像で use_heuristic=True が明るい領域の端を優先する。"""
+    img = _make_gradient_image(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    from backend.core.density.grid_builder import build_cell_grid
+    gray = preprocess_image(img, max_side=64)
+    rows = cols = 6
+    grid = build_cell_grid(gray, rows, cols)
+    adj = build_spanning_tree(grid)
+    entrance, exit_cell, path = find_entrance_exit_heuristic(adj, grid.num_cells, grid.luminance)
+    assert len(path) >= 1
+    assert path[0] == entrance
+    assert path[-1] == exit_cell
+
+
+# ---------- 解経路可視化改善 ----------
+
+def test_svg_solution_corridor_style():
+    """Phase 2 SVG 解経路が廊下風（stroke-linecap=round、太い線幅）になっている。"""
+    img = _make_small_image(48, 48)
+    result = generate_density_maze(img, grid_size=4, max_side=48, show_solution=True)
+    assert "stroke-linecap" in result.svg
+    assert "round" in result.svg
+
+
+def test_svg_solution_entrance_exit_markers():
+    """Phase 2 SVG に入口・出口マーカー（circle）が含まれる。"""
+    img = _make_small_image(48, 48)
+    result = generate_density_maze(img, grid_size=4, max_side=48, show_solution=True)
+    assert "circle" in result.svg.lower()
+
+
+def test_png_solution_non_empty_with_corridor():
+    """Phase 2 PNG が有効なバイト列を返す。"""
+    img = _make_small_image(48, 48)
+    result = generate_density_maze(img, grid_size=4, max_side=48, show_solution=True)
+    assert len(result.png_bytes) > 200
+
+
+# ---------- Phase 2 フルパイプライン ----------
+
+def test_phase2_full_pipeline_generic():
+    """Phase 2 フルパイプライン（GENERIC プリセット）が正常に動作する。"""
+    img = _make_small_image(64, 64)
+    result = generate_density_maze(
+        img, grid_size=5, max_side=64,
+        use_texture=True, use_heuristic=True,
+        preset="generic", n_segments=4,
+    )
+    assert result.entrance >= 0
+    assert result.exit_cell >= 0
+    assert len(result.solution_path) >= 1
+    assert result.segment_map is not None
+    assert result.texture_map is not None
+    assert len(result.svg) > 100
+    assert len(result.png_bytes) > 100
+
+
+def test_phase2_full_pipeline_face_preset():
+    """Phase 2 フルパイプライン（FACE プリセット）が正常に動作する。"""
+    img = _make_gradient_image(64, 64)
+    result = generate_density_maze(
+        img, grid_size=6, max_side=64,
+        use_texture=True, use_heuristic=True,
+        preset="face", n_segments=4,
+    )
+    assert result.entrance >= 0
+    assert result.segment_map is not None
+    assert result.segment_map.shape[0] > 0
+
+
+def test_phase2_full_pipeline_landscape_preset():
+    """Phase 2 フルパイプライン（LANDSCAPE プリセット）が正常に動作する。"""
+    img = _make_gradient_image(64, 64)
+    result = generate_density_maze(
+        img, grid_size=6, max_side=64,
+        use_texture=True,
+        preset="landscape", n_segments=4,
+    )
+    assert result.entrance >= 0
+    assert result.texture_map is not None
+
+
+def test_phase2_segment_map_in_result():
+    """use_texture=True のとき result.segment_map が正しい形状を持つ。"""
+    img = _make_checkerboard(64, 64)
+    result = generate_density_maze(
+        img, grid_size=4, max_side=64,
+        use_texture=True, n_segments=4,
+    )
+    assert result.segment_map is not None
+    assert result.segment_map.ndim == 2
+    assert result.segment_map.shape[0] > 0
+
+
+def test_phase2_texture_map_in_result():
+    """use_texture=True のとき result.texture_map が grid 形状で返る。"""
+    img = _make_small_image(64, 64)
+    result = generate_density_maze(
+        img, grid_size=5, max_side=64,
+        use_texture=True,
+    )
+    assert result.texture_map is not None
+    assert result.texture_map.shape == (result.grid_rows, result.grid_cols)
+
+
+def test_phase2_perfect_maze_preserved():
+    """Phase 2 でも perfect maze（入口1・出口1・解経路1本）が維持される。"""
+    img = _make_gradient_image(48, 48)
+    result = generate_density_maze(
+        img, grid_size=5, max_side=48,
+        use_texture=True, use_heuristic=True,
+        preset="face",
+    )
+    path = result.solution_path
+    assert path[0] == result.entrance
+    assert path[-1] == result.exit_cell
+    assert len(path) == len(set(path)), "Phase 2 で解経路に重複が生じた"
