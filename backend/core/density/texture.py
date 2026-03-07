@@ -1,6 +1,6 @@
 """
 密度迷路 Phase 2: テクスチャ割り当て。
-- TextureType: RANDOM / DIRECTIONAL
+- TextureType: RANDOM / DIRECTIONAL / SPIRAL
 - assign_cell_textures(): セルごとのテクスチャ種別を多数決で決定
 - compute_gradient_angles(): セルごとの輝度グラジエント方向（ラジアン）
 - PRESET_FACE / PRESET_LANDSCAPE / PRESET_GENERIC: ラベル→テクスチャの標準マッピング
@@ -17,15 +17,19 @@ from .grid_builder import CellGrid
 
 class TextureType(enum.Enum):
     """セルに適用するテクスチャパターン。"""
-    RANDOM = "random"         # Phase1と同じ：輝度ベースのランダムな壁重み
+    RANDOM = "random"            # Phase1と同じ：輝度ベースのランダムな壁重み
     DIRECTIONAL = "directional"  # グラジエント方向に沿う通路を優先
+    SPIRAL = "spiral"            # 直角グリッド上のらせん状パターン（正方形渦巻き）
+    #   上辺・下辺で水平通路を優先、左辺・右辺で垂直通路を優先し、
+    #   セルの中心からの角度に基づく壁バイアスで同心方形の螺旋を表現する。
+    #   曲線は使用しない（01a §1.5 制約遵守）。
 
 
 # ---- プリセット: ラベル(0=暗〜n-1=明) → テクスチャ ----
 
 PRESET_FACE: Dict[int, TextureType] = {
     0: TextureType.DIRECTIONAL,  # 暗い = 髪 → 方向性（流れのある線）
-    1: TextureType.RANDOM,       # やや暗い = 影・輪郭 → ランダム
+    1: TextureType.SPIRAL,       # やや暗い = 影・輪郭 → らせん（輪郭を囲む構造）
     2: TextureType.RANDOM,       # やや明るい = 肌 → ランダム（密度で表現）
     3: TextureType.DIRECTIONAL,  # 明るい = 背景・ハイライト → 方向性
 }
@@ -33,7 +37,7 @@ PRESET_FACE: Dict[int, TextureType] = {
 PRESET_LANDSCAPE: Dict[int, TextureType] = {
     0: TextureType.DIRECTIONAL,  # 暗い = 木・地面 → 方向性
     1: TextureType.DIRECTIONAL,  # やや暗 = 草木 → 方向性
-    2: TextureType.RANDOM,       # やや明 = 建物・岩 → ランダム
+    2: TextureType.SPIRAL,       # やや明 = 建物・岩 → らせん（構造物の輪郭・囲み効果）
     3: TextureType.DIRECTIONAL,  # 明るい = 空 → 方向性（グラデーション）
 }
 

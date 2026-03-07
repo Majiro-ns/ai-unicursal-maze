@@ -88,6 +88,26 @@ def build_cell_grid(
     return CellGrid(rows=grid_rows, cols=grid_cols, luminance=lum, walls=walls)
 
 
+def _spiral_angle(r: int, c: int, rows: int, cols: int) -> float:
+    """
+    セル (r, c) の中心からの角度（ラジアン、-π〜π）を返す。
+    らせんバイアス計算用。中心セルでは 0.0 を返す。
+
+    らせんバイアスの基本式（時計回り螺旋 / 01a §3.1 参照）:
+      右壁（水平通路）: bias = sin²(θ) — 上辺・下辺（θ≈±π/2）で最大
+      下壁（垂直通路）: bias = cos²(θ) — 左辺・右辺（θ≈0, π）で最大
+    これにより、上下辺で水平廊下・左右辺で垂直廊下が優先され、
+    同心方形の螺旋状パターン（正方形渦巻き）が形成される。
+    """
+    cr = (rows - 1) / 2.0
+    cc = (cols - 1) / 2.0
+    dr = r - cr
+    dc = c - cc
+    if abs(dr) < 1e-9 and abs(dc) < 1e-9:
+        return 0.0  # 中心セル: 角度未定義 → バイアスなし（sin²=cos²=0/1 で均等）
+    return float(np.arctan2(dr, dc))
+
+
 def build_cell_grid_with_texture(
     gray: np.ndarray,
     grid_rows: int,
@@ -134,11 +154,17 @@ def build_cell_grid_with_texture(
                 ang_b = gradient_angles[r, c + 1]
                 base = (lum_a + lum_b) / 2.0
 
-                # 両セルとも DIRECTIONAL のときバイアスを適用
                 if tex_a == TextureType.DIRECTIONAL or tex_b == TextureType.DIRECTIONAL:
+                    # 画像グラジエント方向に沿う通路を優先
                     avg_ang = (ang_a + ang_b) / 2.0
-                    # 水平通路: cos²(angle) が大きい → 水平グラジエントのとき優先
+                    # 水平通路: cos²(angle) — 水平グラジエントのとき優先
                     bias = float(np.cos(avg_ang) ** 2)
+                    weight = base * (1.0 - bias_strength * bias)
+                elif tex_a == TextureType.SPIRAL or tex_b == TextureType.SPIRAL:
+                    # らせんバイアス（右壁）: sin²(θ) — θ≈±π/2（上辺・下辺）で最大
+                    # 上辺・下辺にある壁を優先的に除去し、水平廊下を形成する
+                    ang = _spiral_angle(r, c, grid_rows, grid_cols)
+                    bias = float(np.sin(ang) ** 2)
                     weight = base * (1.0 - bias_strength * bias)
                 else:
                     weight = base
@@ -155,8 +181,14 @@ def build_cell_grid_with_texture(
 
                 if tex_a == TextureType.DIRECTIONAL or tex_b == TextureType.DIRECTIONAL:
                     avg_ang = (ang_a + ang_b) / 2.0
-                    # 垂直通路: sin²(angle) が大きい → 垂直グラジエントのとき優先
+                    # 垂直通路: sin²(angle) — 垂直グラジエントのとき優先
                     bias = float(np.sin(avg_ang) ** 2)
+                    weight = base * (1.0 - bias_strength * bias)
+                elif tex_a == TextureType.SPIRAL or tex_b == TextureType.SPIRAL:
+                    # らせんバイアス（下壁）: cos²(θ) — θ≈0,π（左辺・右辺）で最大
+                    # 左辺・右辺にある壁を優先的に除去し、垂直廊下を形成する
+                    ang = _spiral_angle(r, c, grid_rows, grid_cols)
+                    bias = float(np.cos(ang) ** 2)
                     weight = base * (1.0 - bias_strength * bias)
                 else:
                     weight = base

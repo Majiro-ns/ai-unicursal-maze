@@ -117,6 +117,7 @@ from backend.core.density.texture import (
     assign_cell_textures,
     compute_gradient_angles,
 )
+from backend.core.density.grid_builder import _spiral_angle
 from backend.core.density.grid_builder import (
     CellGrid,
     build_cell_grid_with_texture,
@@ -396,3 +397,111 @@ def test_phase2_perfect_maze_preserved():
     assert path[0] == result.entrance
     assert path[-1] == result.exit_cell
     assert len(path) == len(set(path)), "Phase 2 で解経路に重複が生じた"
+
+
+# ============================================================
+# Phase 2 続行: SPIRAL テクスチャ（01a §3.1 / §7.3）
+# ============================================================
+
+def test_texture_spiral_enum_exists():
+    """TextureType.SPIRAL が定義されていること（01a §3.1 らせん要件）。"""
+    assert hasattr(TextureType, "SPIRAL")
+    assert TextureType.SPIRAL.value == "spiral"
+
+
+def test_preset_face_contains_spiral():
+    """PRESET_FACE に SPIRAL テクスチャが含まれること（影・輪郭領域）。"""
+    assert TextureType.SPIRAL in PRESET_FACE.values()
+
+
+def test_preset_landscape_contains_spiral():
+    """PRESET_LANDSCAPE に SPIRAL テクスチャが含まれること（建物・岩領域）。"""
+    assert TextureType.SPIRAL in PRESET_LANDSCAPE.values()
+
+
+def test_spiral_angle_center_returns_zero():
+    """中心セルでは _spiral_angle が 0.0 を返す。"""
+    angle = _spiral_angle(2, 2, 5, 5)  # 中心 = (2, 2)
+    assert abs(angle) < 1e-6
+
+
+def test_spiral_angle_top_vs_right_differ():
+    """上辺セルと右辺セルで _spiral_angle の値が異なる（方向分化の確認）。"""
+    rows, cols = 7, 7
+    # 上辺中央: (0, 3) → θ ≈ -π/2
+    angle_top = _spiral_angle(0, 3, rows, cols)
+    # 右辺中央: (3, 6) → θ ≈ 0
+    angle_right = _spiral_angle(3, 6, rows, cols)
+    # 上辺は sin²(θ)=1（右壁バイアス大）、右辺は sin²(θ)≈0（右壁バイアス小）
+    assert abs(float(np.sin(angle_top) ** 2) - 1.0) < 0.1, "上辺の sin²(θ) が 1 に近くない"
+    assert float(np.sin(angle_right) ** 2) < 0.1, "右辺の sin²(θ) が 0 に近くない"
+
+
+def test_build_with_spiral_texture_wall_count():
+    """SPIRAL テクスチャで正しい壁数が生成される。"""
+    img = _make_small_image(64, 64)
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(img, max_side=64)
+    rows, cols = 4, 4
+    all_spiral = np.full((rows, cols), TextureType.SPIRAL, dtype=object)
+    angles = np.zeros((rows, cols), dtype=np.float64)
+    grid = build_cell_grid_with_texture(gray, rows, cols, all_spiral, angles)
+    expected = rows * (cols - 1) + cols * (rows - 1)
+    assert len(grid.walls) == expected
+
+
+def test_build_with_spiral_texture_weights_differ_from_random():
+    """均一輝度画像で SPIRAL の壁重みに分散が生じること（RANDOM は分散ゼロ）。
+
+    均一輝度（全セル同一）では RANDOM はすべて同一重みになるが、
+    SPIRAL は角度バイアスにより重みが位置によって異なる。
+    """
+    # 均一輝度画像（全ピクセル=128, 輝度≈0.5 で統一）
+    uniform_img = _make_small_image(64, 64)   # _make_small_image は全128の均一画像
+    from backend.core.density.preprocess import preprocess_image
+    gray = preprocess_image(uniform_img, max_side=64)
+    rows, cols = 6, 6
+    angles = np.zeros((rows, cols), dtype=np.float64)
+    # RANDOM: バイアスなし → 均一輝度なので全壁同一重み → std ≈ 0
+    all_random = np.full((rows, cols), TextureType.RANDOM, dtype=object)
+    grid_rand = build_cell_grid_with_texture(gray, rows, cols, all_random, angles, bias_strength=0.5)
+    std_rand = float(np.std([w for _, _, w in grid_rand.walls]))
+    # SPIRAL: 角度バイアスにより壁ごとに重みが異なる → std > 0
+    all_spiral = np.full((rows, cols), TextureType.SPIRAL, dtype=object)
+    grid_spiral = build_cell_grid_with_texture(gray, rows, cols, all_spiral, angles, bias_strength=0.5)
+    std_spiral = float(np.std([w for _, _, w in grid_spiral.walls]))
+    assert std_spiral > std_rand, (
+        f"SPIRAL std({std_spiral:.4f}) は RANDOM std({std_rand:.4f}) より大きくない。"
+        "均一輝度画像で SPIRAL バイアスが壁の重みを変化させていない可能性あり。"
+    )
+
+
+def test_phase2_full_pipeline_face_preset_with_spiral():
+    """FACE プリセット（SPIRAL含む）のフルパイプラインが正常動作する。"""
+    img = _make_gradient_image(64, 64)
+    result = generate_density_maze(
+        img, grid_size=6, max_side=64,
+        use_texture=True, use_heuristic=True,
+        preset="face", n_segments=4,
+    )
+    assert result.entrance >= 0
+    assert result.exit_cell >= 0
+    assert len(result.solution_path) >= 1
+    assert result.segment_map is not None
+    assert result.texture_map is not None
+    assert len(result.svg) > 100
+
+
+def test_phase2_perfect_maze_preserved_with_spiral():
+    """SPIRAL テクスチャでも perfect maze（解経路1本・重複なし）が維持される。"""
+    img = _make_gradient_image(48, 48)
+    result = generate_density_maze(
+        img, grid_size=5, max_side=48,
+        use_texture=True, use_heuristic=True,
+        preset="landscape",  # SPIRAL を含む
+    )
+    path = result.solution_path
+    assert len(path) >= 1
+    assert path[0] == result.entrance
+    assert path[-1] == result.exit_cell
+    assert len(path) == len(set(path)), "SPIRAL テクスチャで解経路に重複が生じた"
