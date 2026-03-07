@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import os
 from io import BytesIO
 
@@ -6,7 +6,7 @@ import requests
 import streamlit as st
 from PIL import Image, ImageDraw
 
-API_URL = os.environ.get("MAZE_API_URL", "http://localhost:8000/api/generate_maze")
+API_URL = (os.environ.get("MAZE_API_URL", "http://localhost:8000/api/generate_maze") or "").strip()
 
 
 def _call_api(
@@ -112,14 +112,42 @@ def main() -> None:
     )
 
     st.sidebar.header("出力オプション")
-    width = st.sidebar.number_input("出力幅 (px)", min_value=100, max_value=4000, value=800, step=50)
-    height = st.sidebar.number_input("出力高さ (px)", min_value=100, max_value=4000, value=600, step=50)
-    stroke_width = st.sidebar.slider("線の太さ", min_value=1.0, max_value=20.0, value=6.0, step=0.5)
+
+    st.sidebar.markdown("#### 解像度（T-7）")
+    width = st.sidebar.number_input(
+        "出力幅 (px)",
+        min_value=100,
+        max_value=4000,
+        value=800,
+        step=50,
+        help="生成画像の幅。100〜4000。デフォルト 800。",
+    )
+    height = st.sidebar.number_input(
+        "出力高さ (px)",
+        min_value=100,
+        max_value=4000,
+        value=600,
+        step=50,
+        help="生成画像の高さ。100〜4000。デフォルト 600。",
+    )
+
+    st.sidebar.markdown("#### 線の太さ（T-7）")
+    stroke_width = st.sidebar.slider(
+        "線の太さ",
+        min_value=1.0,
+        max_value=20.0,
+        value=6.0,
+        step=0.5,
+        help="迷路の線の太さ（ピクセル）。1.0〜20.0。デフォルト 6.0。",
+    )
+
+    st.sidebar.markdown("#### その他表示")
     line_mode = st.sidebar.selectbox(
         "線画モード",
         options=["default", "detail"],
         index=0,
         format_func=lambda x: "標準" if x == "default" else "細部重視 (detail)",
+        help="線画抽出のモード。detail は顔帯域で細部を強調。",
     )
 
     st.sidebar.markdown("### トレードオフ設定")
@@ -132,22 +160,22 @@ def main() -> None:
         help="0.0=元画像の顔に沿ったパス（顔らしさ優先） / 1.0=曲がりくねった迷路（迷路性優先）",
     )
 
-    st.sidebar.markdown("### 迷路の粗さ")
+    st.sidebar.markdown("### 迷路の粗さ（T-7）")
     spur_length = st.sidebar.slider(
-        "スパー最大長（大きいほど迷路が粗い）",
+        "スパー最大長",
         min_value=0,
         max_value=12,
         value=4,
         step=1,
-        help="スケルトンの短い突起を除去する最大長。大きくするほど細かい枝が消え迷路が粗くなる。",
+        help="スケルトンの短い突起を除去する最大長（ピクセル）。大きいほど迷路が粗くなる。0〜12、デフォルト 4。",
     )
     min_edge_size = st.sidebar.slider(
-        "ノイズ除去閾値（大きいほど細かい線を除去）",
+        "ノイズ除去閾値",
         min_value=1,
         max_value=32,
         value=8,
         step=1,
-        help="スケルトン化前に除去する小領域の最大ピクセル数。大きくするほどノイズが除去される。",
+        help="スケルトン化前に除去する小領域の最大ピクセル数。大きいほど細かい線・ノイズが除去される。1〜32、デフォルト 8。",
     )
 
     with st.sidebar.expander("顔帯域 (detail モード用)", expanded=False):

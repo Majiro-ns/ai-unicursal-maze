@@ -10,6 +10,7 @@ from PIL import Image, UnidentifiedImageError
 from ..core.models import MazeOptions
 from ..core.maze_generator import generate_unicursal_maze
 from ..core.staged_generator import generate_staged_maze
+from ..core.density import generate_density_maze as generate_density_maze_core
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -127,4 +128,60 @@ async def generate_maze(
         "path_length": result.path_length,        # T-9
         "dead_end_count": result.dead_end_count,  # T-9
         "path_weight_debug_base64": debug_png_base64,
+    }
+
+
+@router.post("/generate_density_maze")
+async def generate_density_maze(
+    file: UploadFile = File(...),
+    grid_size: int | None = Form(50),
+    width: int | None = Form(800),
+    height: int | None = Form(600),
+    stroke_width: float | None = Form(2.0),
+    show_solution: bool | None = Form(True),
+    density_factor: float | None = Form(1.0),
+    max_side: int | None = Form(512),
+):
+    """密度迷路 Phase 1: 濃度マップ→グリッド→Kruskal→1本の解経路・入口1・出口1。"""
+    raw_bytes = await file.read()
+    if len(raw_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+    try:
+        image_stream = io.BytesIO(raw_bytes)
+        image = Image.open(image_stream)
+        image.load()
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Unsupported or invalid image file.")
+
+    gs = max(2, min(100, grid_size)) if grid_size is not None else 50
+    w = width or 800
+    h = height or 600
+    sw = float(stroke_width) if stroke_width is not None else 2.0
+    df = float(density_factor) if density_factor is not None else 1.0
+    ms = max_side or 512
+
+    result = generate_density_maze_core(
+        image,
+        grid_size=gs,
+        max_side=ms,
+        width=w,
+        height=h,
+        stroke_width=sw,
+        show_solution=bool(show_solution) if show_solution is not None else True,
+        density_factor=df,
+    )
+
+    r, c = result.grid_rows, result.grid_cols
+    entrance_rc = (result.entrance // c, result.entrance % c)
+    exit_rc = (result.exit_cell // c, result.exit_cell % c)
+
+    return {
+        "maze_id": result.maze_id,
+        "maze_svg": result.svg,
+        "maze_png_base64": base64.b64encode(result.png_bytes).decode("utf-8"),
+        "entrance": {"cell_id": result.entrance, "row": entrance_rc[0], "col": entrance_rc[1]},
+        "exit": {"cell_id": result.exit_cell, "row": exit_rc[0], "col": exit_rc[1]},
+        "solution_path": result.solution_path,
+        "grid_rows": r,
+        "grid_cols": c,
     }

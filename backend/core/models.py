@@ -36,14 +36,16 @@ class MazeOptions:
 
 @dataclass
 class MazeResult:
+    """
+    迷路生成結果。T-9 難易度指標を格納（定義は docs/DIFFICULTY_METRICS.md 参照）。
+    """
     maze_id: str
     svg: str
     png_bytes: bytes
     timings: Dict[str, float] | None = None
     num_solutions: Optional[int] = None
-    difficulty_score: Optional[float] = None
-    # T-9: 難易度指標
-    turn_count: Optional[int] = None       # 曲がり角の数
-    path_length: Optional[int] = None      # 経路長（パスのノード数）
-    dead_end_count: Optional[int] = None   # 袋小路の数（degree==1のノード数）
+    difficulty_score: Optional[float] = None   # T-9: 0.0〜1.0、曲がり角の密度
+    turn_count: Optional[int] = None          # T-9: 曲がり角の数
+    path_length: Optional[int] = None         # T-9: 経路長（解経路のノード数）
+    dead_end_count: Optional[int] = None       # T-9: 袋小路の数（degree==1 のノード数）
     path_weight_debug_png: Optional[bytes] = None
