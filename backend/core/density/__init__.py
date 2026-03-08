@@ -40,6 +40,18 @@ MASTERPIECE_PRESET: dict = {
     "use_gradient_walls": True,  # Phase 4: SVG linearGradient 壁色グラデーション
 }
 
+# Path-First Masterpiece V2: 経路優先パイプライン（I4+F3+G1+H2+K1）
+# V6: no-shortcut spanning tree — BFS solution IS the image-tracing path
+MASTERPIECE_V2_PRESET: dict = {
+    **MASTERPIECE_PRESET,
+    "use_path_first": True,
+    "grid_size": 50,         # override grid_size=8 for image tracing resolution
+    "dark_threshold": 0.3,
+    "bright_threshold": 0.7,
+    "path_thickness_dark": 6.0,
+    "path_thickness_bright": 1.0,
+}
+
 
 @dataclass
 class DensityMazeResult:
@@ -101,6 +113,11 @@ def generate_density_maze(
     variable_cell_size: bool = False,
     # Phase 4: SVG linearGradient 壁色グラデーション（False=既存挙動・後方互換）
     use_gradient_walls: bool = False,
+    # Path-First Masterpiece V2（I4+F3+G1+H2+K1）
+    use_path_first: bool = False,
+    bright_threshold: float = 0.7,
+    path_thickness_dark: float = 6.0,
+    path_thickness_bright: float = 1.0,
 ) -> DensityMazeResult:
     """
     密度迷路パイプライン（Phase 1/2 共用）。
@@ -170,29 +187,78 @@ def generate_density_maze(
             grid = build_cell_grid(gray, grid_rows, grid_cols, density_factor=density_factor,
                                    variable_cell_size=variable_cell_size)
 
-    adj = build_spanning_tree(grid)
+    if use_path_first:
+        # === Path-First Masterpiece V2 Pipeline (I4+F3+G1+H2+K1) ===
+        from .edge_enhancer import detect_edge_map, extract_edge_waypoints
+        from .path_designer import (
+            classify_cells,
+            find_dark_blobs,
+            find_entrance_exit_path_first,
+            order_blobs_for_path,
+            design_masterpiece_path,
+            build_walls_around_path,
+        )
 
-    # Phase 2b: ループ許容密度後処理
-    if extra_removal_rate > 0.0 or light_threshold < 1.0:
-        adj = post_process_density(
-            adj,
-            grid,
+        # K1: Edge detection for waypoints
+        edge_map = detect_edge_map(
+            gray, grid_rows, grid_cols,
+            sigma=edge_sigma,
+            low_threshold=edge_low_threshold,
+            high_threshold=edge_high_threshold,
+        )
+        edge_waypoints = extract_edge_waypoints(edge_map, grid_cols, threshold=0.3)
+
+        # Classify cells and find dark blobs
+        cell_classes = classify_cells(
+            grid.luminance,
+            dark_thresh=dark_threshold,
+            bright_thresh=bright_threshold,
+        )
+        blobs = find_dark_blobs(cell_classes, grid)
+
+        # Find entrance/exit
+        entrance, exit_cell = find_entrance_exit_path_first(grid, cell_classes)
+
+        # Order blobs and design path (F3 serpentine fill)
+        ordered_blobs = order_blobs_for_path(blobs, entrance, exit_cell, grid)
+        solution_path, path_edges = design_masterpiece_path(
+            grid, cell_classes, ordered_blobs, entrance, exit_cell, edge_waypoints
+        )
+
+        # I4: Build walls around designed path (V6 no-shortcut)
+        adj = build_walls_around_path(
+            grid, path_edges, cell_classes,
             extra_removal_rate=extra_removal_rate,
-            dark_threshold=dark_threshold,
-            light_threshold=light_threshold,
-        )
-
-    if use_image_guided:
-        # Phase 2b: 画像適応ルーティング（明部を通る Dijkstra 最短経路）
-        entrance, exit_cell, solution_path = find_image_guided_path(
-            adj, grid.num_cells, grid.luminance, grid_rows, grid_cols
-        )
-    elif use_heuristic:
-        entrance, exit_cell, solution_path = find_entrance_exit_heuristic(
-            adj, grid.num_cells, grid.luminance
+            solution_cells=set(solution_path),
         )
     else:
-        entrance, exit_cell, solution_path = find_entrance_exit_and_path(adj, grid.num_cells)
+        # === Original Pipeline (V1) ===
+        adj = build_spanning_tree(grid)
+
+        # Phase 2b: ループ許容密度後処理
+        if extra_removal_rate > 0.0 or light_threshold < 1.0:
+            adj = post_process_density(
+                adj,
+                grid,
+                extra_removal_rate=extra_removal_rate,
+                dark_threshold=dark_threshold,
+                light_threshold=light_threshold,
+            )
+
+        if use_image_guided:
+            # Phase 2b: 画像適応ルーティング（明部を通る Dijkstra 最短経路）
+            entrance, exit_cell, solution_path = find_image_guided_path(
+                adj, grid.num_cells, grid.luminance, grid_rows, grid_cols
+            )
+        elif use_heuristic:
+            entrance, exit_cell, solution_path = find_entrance_exit_heuristic(
+                adj, grid.num_cells, grid.luminance
+            )
+        else:
+            entrance, exit_cell, solution_path = find_entrance_exit_and_path(adj, grid.num_cells)
+
+    # G1: Pass luminance info for per-segment variable path width
+    cell_luminance = grid.luminance if use_path_first else None
 
     svg = maze_to_svg(
         grid, adj, entrance, exit_cell, solution_path,
@@ -205,6 +271,9 @@ def generate_density_maze(
         wall_color_min=wall_color_min,
         wall_color_max=wall_color_max,
         use_gradient_walls=use_gradient_walls,
+        cell_luminance=cell_luminance,
+        path_thickness_dark=path_thickness_dark,
+        path_thickness_bright=path_thickness_bright,
     )
     png_bytes = maze_to_png(
         grid, adj, entrance, exit_cell, solution_path,
@@ -216,6 +285,9 @@ def generate_density_maze(
         dpi=png_dpi,
         wall_color_min=wall_color_min,
         wall_color_max=wall_color_max,
+        cell_luminance=cell_luminance,
+        path_thickness_dark=path_thickness_dark,
+        path_thickness_bright=path_thickness_bright,
     )
 
     return DensityMazeResult(

@@ -89,6 +89,34 @@ def detect_edge_map(
     return np.clip(edge_map, 0.0, 1.0)
 
 
+def extract_edge_waypoints(
+    edge_map: np.ndarray,
+    grid_cols: int,
+    threshold: float = 0.3,
+) -> set:
+    """
+    Extract cell IDs where edge strength exceeds threshold.
+
+    These waypoints are used by connect_through_bright() in path-first mode
+    as preferred transit points (K1).
+
+    Args:
+        edge_map: (grid_rows, grid_cols) float edge strength map from detect_edge_map().
+        grid_cols: Number of grid columns (for cell_id = r * grid_cols + c).
+        threshold: Edge strength threshold (0-1). Cells above this are waypoints.
+
+    Returns:
+        Set of cell IDs with strong edges.
+    """
+    waypoints: set = set()
+    rows, cols = edge_map.shape
+    for r in range(rows):
+        for c in range(cols):
+            if edge_map[r, c] > threshold:
+                waypoints.add(r * grid_cols + c)
+    return waypoints
+
+
 def apply_edge_boost_to_walls(
     walls: List[Tuple[int, int, float]],
     edge_map: np.ndarray,

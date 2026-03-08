@@ -201,6 +201,10 @@ def maze_to_svg(
     wall_color_min: int = 40,
     wall_color_max: int = 175,
     use_gradient_walls: bool = False,
+    # G1: per-segment variable path width (path-first V2)
+    cell_luminance: Optional[np.ndarray] = None,
+    path_thickness_dark: float = 6.0,
+    path_thickness_bright: float = 1.0,
 ) -> str:
     """
     迷路を SVG で描画。セルは矩形、隣接かつ壁除去済みでない境界に線を引く。
@@ -389,16 +393,15 @@ def maze_to_svg(
 
     # 解経路（座標精度 .1f）
     if show_solution and solution_path:
-        path_d = []
-        for i, cid in enumerate(solution_path):
-            x, y = _cell_center(grid, cid, cell_size, margin, x_offsets, y_offsets)
-            if i == 0:
-                path_d.append(f"M{x:.1f} {y:.1f}")
-            else:
-                path_d.append(f"L{x:.1f} {y:.1f}")
-
         if solution_highlight:
             # デバッグ/プレビューモード: オレンジ廊下 + 入口・出口マーカー
+            path_d = []
+            for i, cid in enumerate(solution_path):
+                x, y = _cell_center(grid, cid, cell_size, margin, x_offsets, y_offsets)
+                if i == 0:
+                    path_d.append(f"M{x:.1f} {y:.1f}")
+                else:
+                    path_d.append(f"L{x:.1f} {y:.1f}")
             corridor_w = max(stroke_width * 1.5, cell_size * 0.40)
             parts.append(
                 f'<path d="{" ".join(path_d)}" fill="none" stroke="#E05000" '
@@ -417,8 +420,30 @@ def maze_to_svg(
                     f'<circle cx="{gx_pt:.1f}" cy="{gy_pt:.1f}" r="{r_marker:.2f}" '
                     f'fill="#CC2222" opacity="0.85"/>'
                 )
+        elif cell_luminance is not None and len(solution_path) > 1:
+            # G1: per-segment variable width (path-first V2 masterpiece mode)
+            flat_lum = cell_luminance.flatten()
+            for i in range(len(solution_path) - 1):
+                cid_a = solution_path[i]
+                cid_b = solution_path[i + 1]
+                x1, y1 = _cell_center(grid, cid_a, cell_size, margin, x_offsets, y_offsets)
+                x2, y2 = _cell_center(grid, cid_b, cell_size, margin, x_offsets, y_offsets)
+                avg_lum = (float(flat_lum[cid_a]) + float(flat_lum[cid_b])) / 2.0
+                # Dark cells -> thick path, Bright cells -> thin path
+                seg_width = path_thickness_bright + (path_thickness_dark - path_thickness_bright) * (1.0 - avg_lum)
+                parts.append(
+                    f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+                    f'stroke="white" stroke-width="{seg_width:.2f}" stroke-linecap="round"/>'
+                )
         else:
             # masterpiece モード: 白線で経路を塗りつぶし（経路部分が白く浮かぶ）
+            path_d = []
+            for i, cid in enumerate(solution_path):
+                x, y = _cell_center(grid, cid, cell_size, margin, x_offsets, y_offsets)
+                if i == 0:
+                    path_d.append(f"M{x:.1f} {y:.1f}")
+                else:
+                    path_d.append(f"L{x:.1f} {y:.1f}")
             corridor_w = max(stroke_width * 2.0, cell_size * 0.85)
             parts.append(
                 f'<path d="{" ".join(path_d)}" fill="none" stroke="white" '
@@ -449,6 +474,10 @@ def maze_to_png(
     dpi: Optional[int] = None,
     wall_color_min: int = 40,
     wall_color_max: int = 175,
+    # G1: per-segment variable path width (path-first V2)
+    cell_luminance: Optional[np.ndarray] = None,
+    path_thickness_dark: float = 6.0,
+    path_thickness_bright: float = 1.0,
 ) -> bytes:
     """迷路を PNG バイト列で出力。thickness_range > 0 で可変壁厚を適用。
 
@@ -519,6 +548,15 @@ def maze_to_png(
             if len(px_pts) > 1:
                 gx_p, gy_p = px_pts[-1]
                 draw.ellipse([gx_p - r_m, gy_p - r_m, gx_p + r_m, gy_p + r_m], fill=(204, 34, 34))
+        elif cell_luminance is not None and len(solution_path) > 1:
+            # G1: per-segment variable width (path-first V2 masterpiece mode)
+            flat_lum = cell_luminance.flatten()
+            for i in range(len(px_pts) - 1):
+                cid_a = solution_path[i]
+                cid_b = solution_path[i + 1]
+                avg_lum = (float(flat_lum[cid_a]) + float(flat_lum[cid_b])) / 2.0
+                seg_width = path_thickness_bright + (path_thickness_dark - path_thickness_bright) * (1.0 - avg_lum)
+                draw.line([px_pts[i], px_pts[i + 1]], fill=(255, 255, 255), width=max(1, int(seg_width)))
         else:
             # masterpiece モード: 白線で経路を塗りつぶし（経路部分が白く浮かぶ）
             corridor_w = max(stroke_width + 2, int(cell_size * 0.85))
