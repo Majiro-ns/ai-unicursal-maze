@@ -209,6 +209,67 @@ def generate_and_evaluate(
     return quality
 
 
+# ============================================================
+# masterpiece 3本柱設定での品質評価（cmd_358k_a2 発見）
+# ============================================================
+
+#: masterpiece 3本柱パラメータ（最適化済み）
+#: 可変壁厚 / ループ密度 / 解法ルーティング を全有効にした「黄金設定」。
+#:
+#: SSIM 実験結果（cmd_358k_a2, 2026-03-08）:
+#:   grid_size=5  : gradient=0.5969 / circle=0.5441  [good]
+#:   grid_size=8  : gradient=0.5566 / circle=0.5072  [good]
+#:   grid_size=10 : gradient=0.5314 / circle=0.4856  [good/fair]
+#:   grid_size=30 : gradient=0.4506 / circle=0.2849  [fair/poor]
+#:   grid_size=100+: 0.16–0.45  [fair/poor]
+#:
+#: 知見:
+#:   - 小グリッド（5〜10）+ 大出力 → 各セルが大きく輝度寄与が高い → SSIM↑
+#:   - 大グリッド（100+）は細壁になり SSIM↓（Edge-SSIM は高い）
+#:   - "excellent" (≥0.70) は二値壁レンダリングの構造的限界で未達
+#:   - グラデーション・円形画像は "good" 到達。高コントラスト画像は "fair" が上限
+MASTERPIECE_OPTIMAL_PARAMS = {
+    "grid_size": 8,          # 5〜10 が SSIM と視認性のバランス点
+    "thickness_range": 1.5,
+    "extra_removal_rate": 0.5,
+    "dark_threshold": 0.3,
+    "light_threshold": 0.7,
+    "use_image_guided": True,
+    "solution_highlight": False,
+    "show_solution": False,
+    "edge_weight": 0.5,
+    "stroke_width": 2.0,
+}
+
+
+def generate_and_evaluate_masterpiece(
+    input_img: Image.Image,
+    grid_size: Optional[int] = None,
+) -> dict:
+    """
+    masterpiece 3本柱設定で迷路を生成し、品質評価を行う。
+
+    MASTERPIECE_OPTIMAL_PARAMS をベースに生成。
+    grid_size を省略すると 8 を使用（SSIM と視認性のバランス点）。
+
+    Returns:
+        dict: evaluate_quality() の結果 + maze_id / grid_size / solution_path_length
+    """
+    from backend.core.density import generate_density_maze
+
+    params = dict(MASTERPIECE_OPTIMAL_PARAMS)
+    if grid_size is not None:
+        params["grid_size"] = grid_size
+
+    result = generate_density_maze(input_img, **params)
+    quality = evaluate_quality(input_img, result.png_bytes)
+    quality["maze_id"] = result.maze_id
+    quality["grid_size"] = params["grid_size"]
+    quality["preset"] = "masterpiece"
+    quality["solution_path_length"] = len(result.solution_path)
+    return quality
+
+
 def benchmark(input_img: Image.Image) -> list[dict]:
     """
     複数プリセットで迷路を生成し、SSIM スコアを比較する。
@@ -230,6 +291,18 @@ def benchmark(input_img: Image.Image) -> list[dict]:
             print(f" SSIM={q['ssim']:.4f}, Edge={q['edge_ssim']:.4f} [{q['rating']}]")
         except Exception as e:
             print(f" ERROR: {e}")
+
+    # masterpiece 3本柱設定も比較に追加
+    label_mp = "masterpiece grid=8 (3本柱最適設定)"
+    print(f"  評価中: {label_mp} ...", end="", flush=True)
+    try:
+        q = generate_and_evaluate_masterpiece(input_img)
+        q["label"] = label_mp
+        results.append(q)
+        print(f" SSIM={q['ssim']:.4f}, Edge={q['edge_ssim']:.4f} [{q['rating']}]")
+    except Exception as e:
+        print(f" ERROR: {e}")
+
     return results
 
 

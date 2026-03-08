@@ -126,16 +126,20 @@ def test_png_has_reasonable_dimensions():
 # ============================================================
 
 def test_svg_contains_variable_stroke_widths():
-    """SVG の壁 stroke-width が単一値でなく複数種類存在する（可変壁厚）。"""
+    """SVG の壁 stroke-width が単一値でなく複数種類存在する（可変壁厚）。
+
+    SVGフォーマット（a8a880f以降）:
+      <g stroke="black" stroke-width="N.NNN"><path d="M... V/H..."/></g>
+    """
     img = _gradient_image(64, 64)
     result = _call_masterpiece(img, grid_size=10)
 
-    # 壁 line の stroke-width を全取得
+    # <g stroke="black" stroke-width="N"> グループの stroke-width を全取得
     wall_sws = re.findall(
-        r'<line[^>]+stroke="black" stroke-width="([\d.]+)"',
+        r'<g stroke="black" stroke-width="([\d.]+)"',
         result.svg,
     )
-    assert len(wall_sws) > 0, "SVG に壁ラインが存在しない"
+    assert len(wall_sws) > 0, "SVG に壁グループが存在しない"
 
     unique_sws = set(wall_sws)
     assert len(unique_sws) > 1, (
@@ -144,7 +148,12 @@ def test_svg_contains_variable_stroke_widths():
 
 
 def test_svg_left_walls_thicker_than_right():
-    """SVG の左半分壁（stroke-width 平均）が右半分より大きい。"""
+    """SVG の左半分壁（stroke-width 平均）が右半分より大きい。
+
+    SVGフォーマット（a8a880f以降）:
+      右壁（垂直線）: <g stroke-width="N"><path d="M{x} {y}V{y2} ..."/>
+      下壁（水平線）: <g stroke-width="N"><path d="M{x0} {y}H{x1} ..."/>
+    """
     img = _gradient_image(64, 64)
     result = _call_masterpiece(img, grid_size=10)
 
@@ -153,22 +162,41 @@ def test_svg_left_walls_thicker_than_right():
     svg_width = int(width_match.group(1)) if width_match else 400
     mid_x = svg_width / 2.0
 
-    # <line x1="..." y1="..." x2="..." y2="..." stroke="black" stroke-width="N"/>
-    line_pat = re.compile(
-        r'<line x1="([\d.]+)" y1="[\d.]+" x2="([\d.]+)" y2="[\d.]+" '
-        r'stroke="black" stroke-width="([\d.]+)"'
+    # 各 <g> グループから stroke-width とパスの x 座標を抽出
+    # グループパターン: <g stroke="black" stroke-width="N"><path d="..."/></g>
+    group_pat = re.compile(
+        r'<g stroke="black" stroke-width="([\d.]+)">'
+        r'<path d="([^"]+)" fill="none"/>'
+        r'</g>'
     )
-    left_sws, right_sws = [], []
-    for m in line_pat.finditer(result.svg):
-        x1, x2, sw = float(m.group(1)), float(m.group(2)), float(m.group(3))
-        avg_x = (x1 + x2) / 2.0
-        if avg_x < mid_x:
-            left_sws.append(sw)
-        else:
-            right_sws.append(sw)
+    # Mxy V/H パターン: M{x} {y}V{y2} または M{x0} {y}H{x1}
+    mv_pat = re.compile(r'M([\d.]+) [\d.]+V')   # 垂直壁: x は壁のx座標
+    mh_pat = re.compile(r'M([\d.]+) [\d.]+H([\d.]+)')  # 水平壁: x0,x1
 
-    assert left_sws, "左半分に壁ラインが存在しない"
-    assert right_sws, "右半分に壁ラインが存在しない"
+    left_sws, right_sws = [], []
+    for m in group_pat.finditer(result.svg):
+        sw = float(m.group(1))
+        path_d = m.group(2)
+
+        # 垂直壁（右壁）: Mx Vy → x がその壁の x 座標
+        for vm in mv_pat.finditer(path_d):
+            x = float(vm.group(1))
+            if x < mid_x:
+                left_sws.append(sw)
+            else:
+                right_sws.append(sw)
+
+        # 水平壁（下壁）: Mx0 yHx1 → (x0+x1)/2 が中心 x
+        for hm in mh_pat.finditer(path_d):
+            x0, x1 = float(hm.group(1)), float(hm.group(2))
+            avg_x = (x0 + x1) / 2.0
+            if avg_x < mid_x:
+                left_sws.append(sw)
+            else:
+                right_sws.append(sw)
+
+    assert left_sws, "左半分に壁が存在しない"
+    assert right_sws, "右半分に壁が存在しない"
 
     left_avg = float(np.mean(left_sws))
     right_avg = float(np.mean(right_sws))
