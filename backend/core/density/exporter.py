@@ -38,6 +38,18 @@ def _wall_stroke(stroke_width_base: float, avg_lum: float, thickness_range: floa
     return stroke_width_base * (1.0 + thickness_range * (1.0 - avg_lum))
 
 
+def _wall_color(avg_lum: float) -> str:
+    """
+    壁の描画色をグレースケールで返す（SVG stroke / PNG fill 共通）。
+      avg_lum=0（黒画素）→ rgb(0,0,0)     = 黒（最大コントラスト）
+      avg_lum=1（白画素）→ rgb(220,220,220)= 淡灰（白背景に消えない範囲で最淡）
+    完全白(255)にしないのは白背景との区別がつかなくなるため。
+    公式: v = int(avg_lum * 220)
+    """
+    v = int(avg_lum * 220)
+    return f"rgb({v},{v},{v})"
+
+
 def wall_thickness_histogram(
     grid: CellGrid,
     adj: Dict[int, List[int]],
@@ -168,8 +180,8 @@ def maze_to_svg(
         for v in neighbors:
             removed.add((min(u, v), max(u, v)))
 
-    # 壁を stroke-width キーでグループ化（M/V/H コマンドで座標簡略化）
-    wall_cmds: Dict[str, List[str]] = defaultdict(list)
+    # 壁を (color, stroke-width) キーでグループ化（M/V/H コマンドで座標簡略化）
+    wall_cmds: Dict[tuple, List[str]] = defaultdict(list)
 
     for r in range(grid.rows):
         for c in range(grid.cols):
@@ -185,10 +197,12 @@ def maze_to_svg(
                     if thickness_range > 0 and stroke_quantize_levels > 0:
                         q_lum = round(avg_lum * stroke_quantize_levels) / stroke_quantize_levels
                         sw = _wall_stroke(stroke_width, q_lum, thickness_range)
+                        color = _wall_color(q_lum)
                     else:
                         sw = _wall_stroke(stroke_width, avg_lum, thickness_range)
+                        color = _wall_color(avg_lum)
                     x1 = x0 + cell_size
-                    wall_cmds[f"{sw:.3f}"].append(
+                    wall_cmds[(color, f"{sw:.3f}")].append(
                         f"M{x1:.1f} {y0:.1f}V{y0 + cell_size:.1f}"
                     )
 
@@ -200,18 +214,20 @@ def maze_to_svg(
                     if thickness_range > 0 and stroke_quantize_levels > 0:
                         q_lum = round(avg_lum * stroke_quantize_levels) / stroke_quantize_levels
                         sw = _wall_stroke(stroke_width, q_lum, thickness_range)
+                        color = _wall_color(q_lum)
                     else:
                         sw = _wall_stroke(stroke_width, avg_lum, thickness_range)
+                        color = _wall_color(avg_lum)
                     y1 = y0 + cell_size
-                    wall_cmds[f"{sw:.3f}"].append(
+                    wall_cmds[(color, f"{sw:.3f}")].append(
                         f"M{x0:.1f} {y1:.1f}H{x0 + cell_size:.1f}"
                     )
 
-    # stroke-width 順に <g> グループとして出力
-    for sw_key in sorted(wall_cmds.keys()):
-        d = " ".join(wall_cmds[sw_key])
+    # (color, stroke-width) 順に <g> グループとして出力
+    for (color, sw_key) in sorted(wall_cmds.keys()):
+        d = " ".join(wall_cmds[(color, sw_key)])
         parts.append(
-            f'<g stroke="black" stroke-width="{sw_key}">'
+            f'<g stroke="{color}" stroke-width="{sw_key}">'
             f'<path d="{d}" fill="none"/>'
             f'</g>'
         )
@@ -315,18 +331,20 @@ def maze_to_png(
                 if (min(cid, cid2), max(cid, cid2)) not in removed:
                     avg_lum = float((grid.luminance[r, c] + grid.luminance[r, c + 1]) / 2.0)
                     sw = max(1, round(_wall_stroke(stroke_width, avg_lum, thickness_range)))
+                    v = int(avg_lum * 220)
                     a = to_px(c + 1, r)
                     b = to_px(c + 1, r + 1)
-                    draw.line([a, b], fill="black", width=sw)
+                    draw.line([a, b], fill=(v, v, v), width=sw)
             # 下壁
             if r + 1 < grid.rows:
                 cid2 = grid.cell_id(r + 1, c)
                 if (min(cid, cid2), max(cid, cid2)) not in removed:
                     avg_lum = float((grid.luminance[r, c] + grid.luminance[r + 1, c]) / 2.0)
                     sw = max(1, round(_wall_stroke(stroke_width, avg_lum, thickness_range)))
+                    v = int(avg_lum * 220)
                     a = to_px(c, r + 1)
                     b = to_px(c + 1, r + 1)
-                    draw.line([a, b], fill="black", width=sw)
+                    draw.line([a, b], fill=(v, v, v), width=sw)
 
     if show_solution and solution_path:
         pts = [_cell_center(grid, cid, cell_size, margin) for cid in solution_path]

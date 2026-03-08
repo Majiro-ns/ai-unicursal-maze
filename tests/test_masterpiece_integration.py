@@ -128,15 +128,15 @@ def test_png_has_reasonable_dimensions():
 def test_svg_contains_variable_stroke_widths():
     """SVG の壁 stroke-width が単一値でなく複数種類存在する（可変壁厚）。
 
-    SVGフォーマット（a8a880f以降）:
-      <g stroke="black" stroke-width="N.NNN"><path d="M... V/H..."/></g>
+    SVGフォーマット（cmd_360k_a2以降、グレースケール壁対応）:
+      <g stroke="rgb(V,V,V)" stroke-width="N.NNN"><path d="M... V/H..."/></g>
     """
     img = _gradient_image(64, 64)
     result = _call_masterpiece(img, grid_size=10)
 
-    # <g stroke="black" stroke-width="N"> グループの stroke-width を全取得
+    # <g stroke="rgb(...)" stroke-width="N"> グループの stroke-width を全取得
     wall_sws = re.findall(
-        r'<g stroke="black" stroke-width="([\d.]+)"',
+        r'<g stroke="rgb\(\d+,\d+,\d+\)" stroke-width="([\d.]+)"',
         result.svg,
     )
     assert len(wall_sws) > 0, "SVG に壁グループが存在しない"
@@ -163,9 +163,9 @@ def test_svg_left_walls_thicker_than_right():
     mid_x = svg_width / 2.0
 
     # 各 <g> グループから stroke-width とパスの x 座標を抽出
-    # グループパターン: <g stroke="black" stroke-width="N"><path d="..."/></g>
+    # グループパターン: <g stroke="rgb(V,V,V)" stroke-width="N"><path d="..."/></g>
     group_pat = re.compile(
-        r'<g stroke="black" stroke-width="([\d.]+)">'
+        r'<g stroke="rgb\(\d+,\d+,\d+\)" stroke-width="([\d.]+)">'
         r'<path d="([^"]+)" fill="none"/>'
         r'</g>'
     )
