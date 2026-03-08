@@ -1,6 +1,7 @@
 """
 密度迷路 Phase 1/2: 濃度マップ → セルグリッド（壁リスト・セル輝度）。
 Phase 2: テクスチャ情報（TextureType・グラジエント方向）を考慮した壁重み計算を追加。
+Phase 2 Stage 4: build_cell_grid_with_edges() でエッジ強調を適用可能。
 """
 from __future__ import annotations
 
@@ -86,6 +87,59 @@ def build_cell_grid(
                 walls.append((min(cid, cid2), max(cid, cid2), weight))
 
     return CellGrid(rows=grid_rows, cols=grid_cols, luminance=lum, walls=walls)
+
+
+def build_cell_grid_with_edges(
+    gray: np.ndarray,
+    grid_rows: int,
+    grid_cols: int,
+    density_factor: float = 1.0,
+    edge_weight: float = 0.0,
+    edge_sigma: float = 1.0,
+    edge_low_threshold: float = 0.05,
+    edge_high_threshold: float = 0.20,
+) -> CellGrid:
+    """
+    Phase 2 Stage 4: 輝度ベースの壁リストに Canny エッジ強調を適用したセルグリッドを返す。
+
+    edge_weight=0.0 のとき build_cell_grid() と同じ結果。
+    edge_weight>0 のとき、輪郭上の壁は weight が増大し（壁が残りやすくなり）、
+    レンダリング後に元画像の輪郭が白い線として視認できる。
+
+    Args:
+        gray: (H, W) float グレースケール画像。
+        grid_rows, grid_cols: セルグリッドサイズ。
+        density_factor: 輝度差の強調度（build_cell_grid に渡す）。
+        edge_weight: エッジ強調強度 0.0〜1.0。0=なし、1=最大。
+        edge_sigma: Canny 前段ガウシアンの標準偏差。
+        edge_low_threshold: Canny 二重閾値の下限（0〜1 相対値）。
+        edge_high_threshold: Canny 二重閾値の上限（0〜1 相対値）。
+
+    Returns:
+        CellGrid（エッジ強調済み壁リストを含む）。
+    """
+    from .edge_enhancer import detect_edge_map, apply_edge_boost_to_walls
+
+    base_grid = build_cell_grid(gray, grid_rows, grid_cols, density_factor=density_factor)
+
+    if edge_weight <= 0.0:
+        return base_grid
+
+    edge_map = detect_edge_map(
+        gray, grid_rows, grid_cols,
+        sigma=edge_sigma,
+        low_threshold=edge_low_threshold,
+        high_threshold=edge_high_threshold,
+    )
+    boosted_walls = apply_edge_boost_to_walls(
+        base_grid.walls, edge_map, grid_cols, edge_weight=edge_weight
+    )
+    return CellGrid(
+        rows=grid_rows,
+        cols=grid_cols,
+        luminance=base_grid.luminance,
+        walls=boosted_walls,
+    )
 
 
 def _spiral_angle(r: int, c: int, rows: int, cols: int) -> float:

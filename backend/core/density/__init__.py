@@ -17,7 +17,7 @@ from PIL import Image
 
 from .entrance_exit import find_entrance_exit_and_path, find_entrance_exit_heuristic
 from .exporter import maze_to_png, maze_to_svg
-from .grid_builder import build_cell_grid, build_cell_grid_with_texture, CellGrid
+from .grid_builder import build_cell_grid, build_cell_grid_with_edges, build_cell_grid_with_texture, CellGrid
 from .maze_builder import build_spanning_tree
 from .preprocess import preprocess_image
 
@@ -54,6 +54,11 @@ def generate_density_maze(
     use_texture: bool = False,
     use_heuristic: bool = False,
     bias_strength: float = 0.5,
+    # Phase 2 Stage 4: エッジ強調
+    edge_weight: float = 0.0,
+    edge_sigma: float = 1.0,
+    edge_low_threshold: float = 0.05,
+    edge_high_threshold: float = 0.20,
 ) -> DensityMazeResult:
     """
     密度迷路パイプライン（Phase 1/2 共用）。
@@ -61,6 +66,7 @@ def generate_density_maze(
     use_texture=False（デフォルト）: Phase 1 相当（後方互換）。
     use_texture=True: Phase 2 — セグメンテーション + テクスチャ割り当て。
     use_heuristic=True: Phase 2 — 解ヒューリスティクスで美しい解経路を選択。
+    edge_weight>0: Phase 2 Stage 4 — Canny エッジ検出で輪郭部分の壁を保持。
     """
     import uuid
 
@@ -106,8 +112,18 @@ def generate_density_maze(
             bias_strength=bias_strength,
         )
     else:
-        # Phase 1 相当
-        grid = build_cell_grid(gray, grid_rows, grid_cols, density_factor=density_factor)
+        # Phase 1 相当（+ エッジ強調オプション）
+        if edge_weight > 0.0:
+            grid = build_cell_grid_with_edges(
+                gray, grid_rows, grid_cols,
+                density_factor=density_factor,
+                edge_weight=edge_weight,
+                edge_sigma=edge_sigma,
+                edge_low_threshold=edge_low_threshold,
+                edge_high_threshold=edge_high_threshold,
+            )
+        else:
+            grid = build_cell_grid(gray, grid_rows, grid_cols, density_factor=density_factor)
 
     adj = build_spanning_tree(grid)
 
