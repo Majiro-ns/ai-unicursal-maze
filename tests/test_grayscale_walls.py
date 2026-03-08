@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-グレースケール壁テスト（cmd_360k_a2）。
+グレースケール壁テスト（cmd_360k_a2 / cmd_361k_a2）。
 
 対象:
-  - _wall_color(): 境界値・公式検証
+  - _wall_color(): 境界値・公式検証・コントラスト保証
   - maze_to_svg(): rgb(...) カラーで壁を描画
   - maze_to_png(): グレースケール壁色
+
+cmd_361k_a2 変更:
+  公式 v = v_min + int((v_max - v_min) * avg_lum)
+  デフォルト: v_min=40, v_max=175 → 背景白(255)との差 Δv≥80 を全輝度で保証。
 """
 from __future__ import annotations
 
@@ -25,18 +29,18 @@ from backend.core.density.exporter import _wall_color
 # ============================================================
 
 def test_wall_color_black():
-    """avg_lum=0.0（黒画素）→ rgb(80,80,80)（下限80）。"""
-    assert _wall_color(0.0) == "rgb(80,80,80)"
+    """avg_lum=0.0（黒画素）→ rgb(40,40,40)（v_min=40）。"""
+    assert _wall_color(0.0) == "rgb(40,40,40)"
 
 
 def test_wall_color_white():
-    """avg_lum=1.0（白画素）→ rgb(220,220,220)（完全白は除く）。"""
-    assert _wall_color(1.0) == "rgb(220,220,220)"
+    """avg_lum=1.0（白画素）→ rgb(175,175,175)（v_max=175, Δv=80保証）。"""
+    assert _wall_color(1.0) == "rgb(175,175,175)"
 
 
 def test_wall_color_mid():
-    """avg_lum=0.5 → rgb(110,110,110)。"""
-    assert _wall_color(0.5) == "rgb(110,110,110)"
+    """avg_lum=0.5 → rgb(107,107,107)。40+int(135*0.5)=40+67=107。"""
+    assert _wall_color(0.5) == "rgb(107,107,107)"
 
 
 def test_wall_color_format():
@@ -59,11 +63,22 @@ def test_wall_color_monotone():
 
 
 def test_wall_color_range():
-    """返り値の v 値は [80, 220] の範囲に収まる（下限80）。"""
+    """返り値の v 値は [40, 175] の範囲に収まる（v_min=40, v_max=175）。"""
     for lum in np.linspace(0.0, 1.0, 21):
         color = _wall_color(float(lum))
         v = int(color.split("(")[1].split(",")[0])
-        assert 80 <= v <= 220, f"avg_lum={lum:.2f}: v={v} が範囲外"
+        assert 40 <= v <= 175, f"avg_lum={lum:.2f}: v={v} が範囲外 [40,175]"
+
+
+def test_wall_color_contrast_guarantee():
+    """全輝度範囲で背景白(255)との差 Δv≥80 を保証する（v_max=175 → 255-175=80）。"""
+    for lum in np.linspace(0.0, 1.0, 101):
+        color = _wall_color(float(lum))
+        v = int(color.split("(")[1].split(",")[0])
+        contrast = 255 - v
+        assert contrast >= 80, (
+            f"avg_lum={lum:.2f}: v={v}, 背景(255)との差={contrast} < 80 — コントラスト不足"
+        )
 
 
 # ============================================================
