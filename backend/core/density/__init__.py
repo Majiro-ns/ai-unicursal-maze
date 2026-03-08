@@ -22,6 +22,21 @@ from .maze_builder import build_spanning_tree, post_process_density
 from .preprocess import preprocess_image
 
 
+# masterpiece 黄金設定（SSIM探索 cmd_358k_a2 結果: grid_size=8 が SSIM と視認性のバランス点）
+MASTERPIECE_PRESET: dict = {
+    "grid_size": 8,
+    "thickness_range": 1.5,
+    "extra_removal_rate": 0.5,
+    "dark_threshold": 0.3,
+    "light_threshold": 0.7,
+    "use_image_guided": True,
+    "solution_highlight": False,
+    "show_solution": False,
+    "edge_weight": 0.5,
+    "stroke_width": 2.0,
+}
+
+
 @dataclass
 class DensityMazeResult:
     maze_id: str

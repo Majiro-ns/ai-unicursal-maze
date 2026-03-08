@@ -10,7 +10,7 @@ from PIL import Image, UnidentifiedImageError
 from ..core.models import MazeOptions
 from ..core.maze_generator import generate_unicursal_maze
 from ..core.staged_generator import generate_staged_maze
-from ..core.density import generate_density_maze as generate_density_maze_core
+from ..core.density import generate_density_maze as generate_density_maze_core, MASTERPIECE_PRESET
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -162,6 +162,8 @@ async def generate_density_maze(
     thickness_range: float | None = Form(1.5),
     use_image_guided: bool | None = Form(False),
     solution_highlight: bool | None = Form(False),
+    # --masterpiece: MASTERPIECE_PRESET を一括適用（True のとき個別パラメータを上書き）
+    masterpiece: bool | None = Form(False),
 ):
     """密度迷路 Phase 1/2: 濃度マップ→グリッド→Kruskal→解経路。Phase2パラメータ対応。"""
     raw_bytes = await file.read()
@@ -193,6 +195,20 @@ async def generate_density_maze(
     tr = max(0.0, min(3.0, float(thickness_range))) if thickness_range is not None else 1.5
     ig = bool(use_image_guided) if use_image_guided is not None else False
     sh = bool(solution_highlight) if solution_highlight is not None else False
+
+    # masterpiece=True のとき MASTERPIECE_PRESET で一括上書き
+    if masterpiece:
+        p = MASTERPIECE_PRESET
+        gs = p["grid_size"]
+        sw = p["stroke_width"]
+        tr = p["thickness_range"]
+        ew = p["edge_weight"]
+        err = p["extra_removal_rate"]
+        dt = p["dark_threshold"]
+        lt = p["light_threshold"]
+        ig = p["use_image_guided"]
+        sh = p["solution_highlight"]
+        show_solution = p["show_solution"]
 
     result = generate_density_maze_core(
         image,
