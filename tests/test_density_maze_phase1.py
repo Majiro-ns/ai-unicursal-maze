@@ -505,3 +505,152 @@ def test_phase2_perfect_maze_preserved_with_spiral():
     assert path[0] == result.entrance
     assert path[-1] == result.exit_cell
     assert len(path) == len(set(path)), "SPIRAL テクスチャで解経路に重複が生じた"
+
+
+# ============================================================
+# Phase 2 続行: density_map 正確性・密度制御・エッジケース・BFSソルバ
+# ============================================================
+
+from backend.core.density.preprocess import preprocess_image
+from backend.core.density.grid_builder import build_cell_grid
+
+
+def _make_all_black_image(w: int = 32, h: int = 32) -> Image.Image:
+    """全黒画像（輝度 0）。"""
+    arr = np.zeros((h, w), dtype=np.uint8)
+    return Image.fromarray(arr, mode="L")
+
+
+def _make_all_white_image(w: int = 32, h: int = 32) -> Image.Image:
+    """全白画像（輝度 255）。"""
+    arr = np.full((h, w), 255, dtype=np.uint8)
+    return Image.fromarray(arr, mode="L")
+
+
+# ---------- density_map 正確性 ----------
+
+def test_preprocess_output_range_gradient():
+    """preprocess_image の出力値が 0.0〜1.0 の範囲内に収まること。"""
+    img = _make_gradient_image(64, 64)
+    gray = preprocess_image(img, max_side=64)
+    assert float(gray.min()) >= 0.0
+    assert float(gray.max()) <= 1.0
+
+
+def test_preprocess_all_black_output_near_zero():
+    """全黒画像の前処理出力は 0.0 に近いこと（density_map の暗部再現性）。"""
+    img = _make_all_black_image(32, 32)
+    gray = preprocess_image(img, max_side=32)
+    assert float(np.mean(gray)) < 0.05, f"全黒画像の平均輝度が高すぎる: {np.mean(gray):.4f}"
+
+
+def test_preprocess_all_white_output_near_one():
+    """全白画像の前処理出力は 1.0 に近いこと（density_map の明部再現性）。"""
+    img = _make_all_white_image(32, 32)
+    gray = preprocess_image(img, max_side=32)
+    assert float(np.mean(gray)) > 0.95, f"全白画像の平均輝度が低すぎる: {np.mean(gray):.4f}"
+
+
+# ---------- Kruskal 密度制御（高/中/低） ----------
+
+def test_kruskal_high_density_factor_connected():
+    """density_factor=2.0（高密度）でも全セル連結の perfect maze が生成される。"""
+    img = _make_small_image(32, 32)
+    result = generate_density_maze(img, grid_size=4, max_side=32, density_factor=2.0)
+    gray = preprocess_image(img, max_side=32)
+    grid = build_cell_grid(gray, result.grid_rows, result.grid_cols, density_factor=2.0)
+    adj = build_spanning_tree(grid)
+    visited: set = set()
+    q: deque = deque([0])
+    visited.add(0)
+    while q:
+        u = q.popleft()
+        for v in adj.get(u, []):
+            if v not in visited:
+                visited.add(v)
+                q.append(v)
+    assert len(visited) == grid.num_cells, "density_factor=2.0 で連結性が失われた"
+
+
+def test_kruskal_low_density_factor_connected():
+    """density_factor=0.1（低密度）でも全セル連結の perfect maze が生成される。"""
+    img = _make_small_image(32, 32)
+    result = generate_density_maze(img, grid_size=4, max_side=32, density_factor=0.1)
+    gray = preprocess_image(img, max_side=32)
+    grid = build_cell_grid(gray, result.grid_rows, result.grid_cols, density_factor=0.1)
+    adj = build_spanning_tree(grid)
+    visited: set = set()
+    q: deque = deque([0])
+    visited.add(0)
+    while q:
+        u = q.popleft()
+        for v in adj.get(u, []):
+            if v not in visited:
+                visited.add(v)
+                q.append(v)
+    assert len(visited) == grid.num_cells, "density_factor=0.1 で連結性が失われた"
+
+
+# ---------- エッジケース（全黒/全白画像） ----------
+
+def test_density_maze_all_black_image_valid_path():
+    """全黒画像でも迷路生成が正常完了し、解経路が1本存在すること。"""
+    img = _make_all_black_image(32, 32)
+    result = generate_density_maze(img, grid_size=4, max_side=32)
+    assert result.entrance >= 0
+    assert result.exit_cell >= 0
+    path = result.solution_path
+    assert len(path) >= 1
+    assert path[0] == result.entrance
+    assert path[-1] == result.exit_cell
+
+
+def test_density_maze_all_white_image_valid_path():
+    """全白画像でも迷路生成が正常完了し、解経路が1本存在すること。"""
+    img = _make_all_white_image(32, 32)
+    result = generate_density_maze(img, grid_size=4, max_side=32)
+    assert result.entrance >= 0
+    path = result.solution_path
+    assert len(path) >= 1
+    assert path[0] == result.entrance
+    assert path[-1] == result.exit_cell
+
+
+# ---------- BFS ソルバ正確性（独立検証） ----------
+
+def test_solution_path_reachable_via_bfs():
+    """BFS で entrance → exit_cell への到達を独立検証する。"""
+    img = _make_small_image(32, 32)
+    result = generate_density_maze(img, grid_size=4, max_side=32)
+    gray = preprocess_image(img, max_side=32)
+    grid = build_cell_grid(gray, result.grid_rows, result.grid_cols)
+    adj = build_spanning_tree(grid)
+    entrance = result.entrance
+    exit_cell = result.exit_cell
+    visited: set = {entrance}
+    q: deque = deque([entrance])
+    found = False
+    while q:
+        u = q.popleft()
+        if u == exit_cell:
+            found = True
+            break
+        for v in adj.get(u, []):
+            if v not in visited:
+                visited.add(v)
+                q.append(v)
+    assert found, f"BFS で entrance({entrance}) から exit_cell({exit_cell}) に到達できない"
+
+
+def test_solution_path_all_steps_adjacent():
+    """解経路の各ステップが隣接セル間移動であること（BFS 隣接リストで独立検証）。"""
+    img = _make_gradient_image(48, 48)
+    result = generate_density_maze(img, grid_size=5, max_side=48)
+    gray = preprocess_image(img, max_side=48)
+    grid = build_cell_grid(gray, result.grid_rows, result.grid_cols)
+    adj = build_spanning_tree(grid)
+    path = result.solution_path
+    for i in range(len(path) - 1):
+        assert path[i + 1] in adj.get(path[i], []), (
+            f"解経路ステップ {i}→{i+1}: セル {path[i]} と {path[i+1]} は非隣接"
+        )
