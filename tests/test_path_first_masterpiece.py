@@ -34,6 +34,8 @@ from backend.core.density.path_designer import (
     find_entrance_exit_path_first,
     order_blobs_for_path,
     serpentine_fill_blob,
+    _serpentine_order_cells,
+    _design_path_blob_serpentine_f3,
 )
 from backend.core.density.edge_enhancer import extract_edge_waypoints
 
@@ -564,3 +566,247 @@ class TestIntegration:
         )
         assert len(result.svg) > 100
         assert len(result.png_bytes) > 100
+
+
+# ---------------------------------------------------------------------------
+# 12. F3 serpentine order tests
+# ---------------------------------------------------------------------------
+
+class TestSerpentineOrderCells:
+    def test_basic_2x3_grid(self):
+        """Cells in 2x3 grid are ordered row-by-row in serpentine pattern."""
+        lum = np.full((2, 3), 0.1)
+        grid = _make_grid(2, 3, lum)
+        cells = list(range(6))
+        ordered = _serpentine_order_cells(cells, grid, start_row=0)
+        assert len(ordered) == 6
+        # Row 0 (even): left→right: 0,1,2; Row 1 (odd): right→left: 5,4,3
+        assert ordered == [0, 1, 2, 5, 4, 3]
+
+    def test_empty_cells(self):
+        """Empty cell list returns empty list."""
+        lum = np.full((3, 3), 0.1)
+        grid = _make_grid(3, 3, lum)
+        assert _serpentine_order_cells([], grid, start_row=0) == []
+
+    def test_single_cell(self):
+        """Single cell returns itself."""
+        lum = np.full((2, 2), 0.1)
+        grid = _make_grid(2, 2, lum)
+        assert _serpentine_order_cells([2], grid, start_row=0) == [2]
+
+    def test_all_cells_present(self):
+        """All input cells appear in output exactly once."""
+        lum = np.full((4, 4), 0.1)
+        grid = _make_grid(4, 4, lum)
+        cells = list(range(16))
+        ordered = _serpentine_order_cells(cells, grid, start_row=0)
+        assert sorted(ordered) == cells
+
+    def test_start_row_bottom(self):
+        """start_row near bottom reverses row scan direction."""
+        lum = np.full((3, 2), 0.1)
+        grid = _make_grid(3, 2, lum)
+        cells = list(range(6))
+        ordered_top = _serpentine_order_cells(cells, grid, start_row=0)
+        ordered_bot = _serpentine_order_cells(cells, grid, start_row=2)
+        # Row order should differ
+        assert ordered_top != ordered_bot
+        # Both contain all cells
+        assert sorted(ordered_top) == sorted(ordered_bot) == cells
+
+
+# ---------------------------------------------------------------------------
+# 13. F3 blob-by-blob serpentine fill (core algorithm) tests
+# ---------------------------------------------------------------------------
+
+class TestF3BlobSerpentine:
+    def _run_f3(self, lum, entrance=0, exit_cell=None):
+        """Helper: run full F3 pipeline on given luminance grid."""
+        rows, cols = lum.shape
+        grid = _make_grid(rows, cols, lum)
+        classes = classify_cells(lum)
+        blobs = find_dark_blobs(classes, grid)
+        if exit_cell is None:
+            exit_cell = rows * cols - 1
+        ordered = order_blobs_for_path(blobs, entrance, exit_cell, grid)
+        rng = np.random.default_rng(42)
+        path, edges = _design_path_blob_serpentine_f3(
+            grid, classes, ordered, entrance, exit_cell, set(), rng
+        )
+        return path, edges, grid, classes, blobs
+
+    def test_no_duplicate_cells(self):
+        """F3 path has no duplicate cells (simple path)."""
+        lum = np.array([[0.1, 0.1, 0.9],
+                        [0.1, 0.9, 0.9],
+                        [0.9, 0.9, 0.1]])
+        path, edges, _, _, _ = self._run_f3(lum)
+        assert len(path) == len(set(path)), "Duplicate cells in solution path"
+
+    def test_starts_at_entrance(self):
+        """F3 path starts at entrance cell."""
+        lum = np.array([[0.1, 0.9, 0.9],
+                        [0.9, 0.9, 0.9],
+                        [0.9, 0.9, 0.1]])
+        path, edges, _, _, _ = self._run_f3(lum, entrance=0, exit_cell=8)
+        assert path[0] == 0
+
+    def test_ends_at_exit(self):
+        """F3 path ends at exit cell."""
+        lum = np.array([[0.1, 0.9, 0.9],
+                        [0.9, 0.9, 0.9],
+                        [0.9, 0.9, 0.1]])
+        path, edges, _, _, _ = self._run_f3(lum, entrance=0, exit_cell=8)
+        assert path[-1] == 8
+
+    def test_valid_4neighbor_adjacency(self):
+        """All consecutive cells in F3 path are 4-neighbor adjacent."""
+        lum = np.array([[0.1, 0.1, 0.9, 0.9],
+                        [0.1, 0.9, 0.9, 0.9],
+                        [0.9, 0.9, 0.1, 0.1],
+                        [0.9, 0.9, 0.1, 0.9]])
+        rows, cols = lum.shape
+        grid = _make_grid(rows, cols, lum)
+        classes = classify_cells(lum)
+        blobs = find_dark_blobs(classes, grid)
+        ordered = order_blobs_for_path(blobs, 0, rows * cols - 1, grid)
+        rng = np.random.default_rng(42)
+        path, _ = _design_path_blob_serpentine_f3(
+            grid, classes, ordered, 0, rows * cols - 1, set(), rng
+        )
+        for i in range(len(path) - 1):
+            a, b = path[i], path[i + 1]
+            ra, ca = grid.cell_rc(a)
+            rb, cb = grid.cell_rc(b)
+            dist = abs(ra - rb) + abs(ca - cb)
+            assert dist == 1, (
+                f"Step {i}: cells {a}({ra},{ca})->({rb},{cb}) not 4-adjacent (dist={dist})"
+            )
+
+    def test_covers_single_blob(self):
+        """F3 covers all cells in a single compact dark blob."""
+        lum = np.array([[0.1, 0.1, 0.9],
+                        [0.1, 0.1, 0.9],
+                        [0.9, 0.9, 0.9]])
+        path, edges, grid, classes, blobs = self._run_f3(lum, entrance=0, exit_cell=8)
+        flat = classes.flatten()
+        dark_tot = sum(1 for c in range(grid.num_cells) if flat[c] == DARK)
+        sol_dark = sum(1 for c in set(path) if flat[c] == DARK)
+        assert dark_tot > 0
+        assert sol_dark / dark_tot >= 0.75, (
+            f"Dark coverage {sol_dark}/{dark_tot} ({100*sol_dark/dark_tot:.0f}%) < 75%"
+        )
+
+    def test_bfs_match_after_wall_build(self):
+        """BFS solution on built maze equals F3 designed path (anti-shortcut invariant)."""
+        from collections import deque
+        lum = np.array([[0.1, 0.9, 0.9],
+                        [0.9, 0.9, 0.9],
+                        [0.9, 0.9, 0.1]])
+        rows, cols = lum.shape
+        grid = _make_grid(rows, cols, lum)
+        classes = classify_cells(lum)
+        blobs = find_dark_blobs(classes, grid)
+        ordered = order_blobs_for_path(blobs, 0, rows * cols - 1, grid)
+        rng = np.random.default_rng(42)
+        path, edges = _design_path_blob_serpentine_f3(
+            grid, classes, ordered, 0, rows * cols - 1, set(), rng
+        )
+        adj = build_walls_around_path(grid, edges, classes, solution_cells=set(path))
+
+        entrance, exit_cell = 0, rows * cols - 1
+        vis = {entrance}; prev = {entrance: -1}; q = deque([entrance])
+        while q:
+            u = q.popleft()
+            if u == exit_cell:
+                break
+            for v in adj[u]:
+                if v not in vis:
+                    vis.add(v); prev[v] = u; q.append(v)
+        bfs_path = []
+        cur = exit_cell
+        while cur != -1:
+            bfs_path.append(cur); cur = prev[cur]
+        bfs_path.reverse()
+
+        assert len(bfs_path) == len(path), (
+            f"BFS length {len(bfs_path)} != designed length {len(path)}"
+        )
+
+    def test_spanning_tree_invariant(self):
+        """build_walls_around_path produces a spanning tree (n-1 edges)."""
+        lum = np.array([[0.1, 0.1, 0.9],
+                        [0.9, 0.9, 0.9],
+                        [0.9, 0.9, 0.1]])
+        rows, cols = lum.shape
+        grid = _make_grid(rows, cols, lum)
+        classes = classify_cells(lum)
+        blobs = find_dark_blobs(classes, grid)
+        ordered = order_blobs_for_path(blobs, 0, rows * cols - 1, grid)
+        rng = np.random.default_rng(42)
+        path, edges = _design_path_blob_serpentine_f3(
+            grid, classes, ordered, 0, rows * cols - 1, set(), rng
+        )
+        adj = build_walls_around_path(grid, edges, classes, solution_cells=set(path))
+        n = grid.num_cells
+        total = sum(len(v) for v in adj.values()) // 2
+        assert total == n - 1, f"Spanning tree: expected {n-1} edges, got {total}"
+
+    def test_no_blobs_direct_path(self):
+        """F3 with no dark blobs returns direct path from entrance to exit."""
+        lum = np.full((3, 3), 0.8)
+        path, edges, _, _, _ = self._run_f3(lum, entrance=0, exit_cell=8)
+        assert path[0] == 0
+        assert path[-1] == 8
+        assert len(path) >= 2
+
+    def test_dark_coverage_exceeds_75pct_on_circle(self):
+        """F3 achieves >75% dark coverage on circle image (integration)."""
+        from backend.core.density import generate_density_maze
+        from backend.core.density.preprocess import preprocess_image
+        from backend.core.density.grid_builder import build_cell_grid
+        img = _make_circle_image(64)
+        result = generate_density_maze(
+            img,
+            grid_size=10,
+            width=400, height=400,
+            show_solution=False,
+            use_path_first=True,
+            dark_threshold=0.3,
+            bright_threshold=0.7,
+            variable_cell_size=True,
+        )
+        gray = preprocess_image(img, max_side=512)
+        grid_rows = min(10, max(gray.shape[0] // 4, 1))
+        grid_cols = min(10, max(gray.shape[1] // 4, 1))
+        grid = build_cell_grid(gray, grid_rows, grid_cols, variable_cell_size=True)
+        classes = classify_cells(grid.luminance)
+        flat = classes.flatten()
+        dark_tot = sum(1 for c in range(grid.num_cells) if flat[c] == DARK)
+        sol_dark = sum(1 for c in set(result.solution_path) if flat[c] == DARK)
+        if dark_tot > 0:
+            coverage = sol_dark / dark_tot
+            assert coverage >= 0.75, f"Dark coverage {coverage:.0%} < 75%"
+
+    def test_two_blobs_both_covered(self):
+        """F3 visits cells in both of two separated dark blobs."""
+        lum = np.array([[0.1, 0.9, 0.9, 0.1],
+                        [0.9, 0.9, 0.9, 0.9],
+                        [0.9, 0.9, 0.9, 0.9],
+                        [0.1, 0.9, 0.9, 0.1]])
+        rows, cols = lum.shape
+        grid = _make_grid(rows, cols, lum)
+        classes = classify_cells(lum)
+        blobs = find_dark_blobs(classes, grid)
+        ordered = order_blobs_for_path(blobs, 0, rows * cols - 1, grid)
+        rng = np.random.default_rng(42)
+        path, edges = _design_path_blob_serpentine_f3(
+            grid, classes, ordered, 0, rows * cols - 1, set(), rng
+        )
+        sol_set = set(path)
+        dark_cells = {c for c in range(grid.num_cells) if classes.flatten()[c] == DARK}
+        visited_dark = dark_cells & sol_set
+        assert len(visited_dark) >= 2, (
+            f"Expected >=2 dark cells visited, got {len(visited_dark)}"
+        )

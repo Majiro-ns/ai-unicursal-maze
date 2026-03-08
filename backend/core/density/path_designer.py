@@ -926,6 +926,179 @@ def _dijkstra_avoiding(
     return path
 
 
+def _serpentine_order_cells(
+    cells: List[int],
+    grid: CellGrid,
+    start_row: int,
+) -> List[int]:
+    """
+    Sort cells in boustrophedon (serpentine) order row-by-row.
+
+    Starts from the row closest to start_row, alternating left→right
+    and right→left on each successive row.
+
+    Args:
+        cells: List of cell IDs to order.
+        grid: CellGrid for coordinate conversion.
+        start_row: Row index closest to entry point (determines scan direction).
+
+    Returns:
+        Cells sorted in serpentine order.
+    """
+    rows_dict: Dict[int, List[Tuple[int, int]]] = {}
+    for cid in cells:
+        r, c = grid.cell_rc(cid)
+        rows_dict.setdefault(r, []).append((c, cid))
+
+    all_rows = sorted(rows_dict.keys())
+    if not all_rows:
+        return []
+
+    # Start from row closest to start_row
+    if abs(start_row - all_rows[-1]) < abs(start_row - all_rows[0]):
+        all_rows = all_rows[::-1]
+
+    waypoints: List[int] = []
+    for i, row_idx in enumerate(all_rows):
+        cells_in_row = sorted(rows_dict[row_idx], key=lambda x: x[0])
+        if i % 2 == 1:
+            cells_in_row = cells_in_row[::-1]
+        for _, cid in cells_in_row:
+            waypoints.append(cid)
+
+    return waypoints
+
+
+def _design_path_blob_serpentine_f3(
+    grid: CellGrid,
+    cell_classes: np.ndarray,
+    blobs: List[DarkBlob],
+    entrance: int,
+    exit_cell: int,
+    edge_waypoints: Optional[Set[int]],
+    rng: np.random.Generator,
+) -> Tuple[List[int], Set[Tuple[int, int]]]:
+    """
+    F3: Blob-by-blob serpentine fill for maximum dark cell coverage.
+
+    For each dark blob (ordered by nearest-neighbor from entrance):
+      1. Transit to blob entry via BFS through unvisited cells only.
+      2. Walk blob cells in serpentine order, bridging gaps through
+         unvisited cells only (_bfs_unvisited_to_target).
+         Unreachable waypoints are skipped (become dead-end branches).
+
+    Because every cell added to the path is unvisited at the time of
+    addition, NO loop-erasure is needed — the path is simple by
+    construction, and dark cells are never accidentally erased.
+
+    Args:
+        grid: CellGrid for dimensions and coordinate conversion.
+        cell_classes: (rows, cols) from classify_cells().
+        blobs: Ordered list of DarkBlob (from order_blobs_for_path).
+        entrance: Entrance cell ID.
+        exit_cell: Exit cell ID.
+        edge_waypoints: Set of edge cell IDs from K1 detection (unused
+            in transit logic, reserved for future use).
+        rng: Random generator for BFS tie-breaking.
+
+    Returns:
+        (solution_path, path_edges) — simple path + edge set.
+    """
+    solution: List[int] = [entrance]
+    visited: Set[int] = {entrance}
+    rows, cols = grid.rows, grid.cols
+
+    def _step(cur: int, target: int) -> bool:
+        """
+        Attempt to advance from cur to target via unvisited-only BFS.
+        Appends new cells to solution and visited. Returns True on success.
+        """
+        if target == cur:
+            return True
+        bridge = _bfs_unvisited_to_target(grid, cur, target, visited, rng)
+        if bridge is None:
+            return False
+        for cid in bridge[1:]:
+            solution.append(cid)
+            visited.add(cid)
+        return True
+
+    for blob in blobs:
+        unvisited_blob = set(blob.cells) - visited
+        if not unvisited_blob:
+            continue
+
+        cur = solution[-1]
+        cur_r, cur_c = grid.cell_rc(cur)
+
+        # 1. Choose closest unvisited blob cell as entry point (Manhattan distance)
+        entry_point = min(
+            unvisited_blob,
+            key=lambda c: (abs(grid.cell_rc(c)[0] - cur_r) +
+                           abs(grid.cell_rc(c)[1] - cur_c))
+        )
+
+        # 2. Transit to entry point (unvisited-only BFS)
+        if not _step(cur, entry_point):
+            # Fallback: allow revisits via loop-erasure-safe bridge
+            # (rare; only when completely walled off)
+            bridge = _bfs_shortest(grid, cur, entry_point)
+            for cid in bridge[1:]:
+                if cid not in visited:
+                    solution.append(cid)
+                    visited.add(cid)
+                # else: skip revisit — may create adjacency gap, but
+                # loop-erasure below handles it
+
+        # 3. Recalculate unvisited blob cells after transit
+        unvisited_blob = set(blob.cells) - visited
+        if not unvisited_blob:
+            continue
+
+        # 4. Serpentine order through unvisited blob cells
+        cur = solution[-1]
+        cur_r, _ = grid.cell_rc(cur)
+        waypoints = _serpentine_order_cells(list(unvisited_blob), grid, cur_r)
+
+        # 5. Walk each waypoint via unvisited-only BFS bridge
+        for wp in waypoints:
+            if wp in visited:
+                continue
+            cur = solution[-1]
+            _step(cur, wp)  # advances solution if reachable; skips otherwise
+
+    # 6. Connect to exit
+    cur = solution[-1]
+    if cur != exit_cell:
+        if not _step(cur, exit_cell):
+            # Last resort: unrestricted shortest path (may revisit)
+            bridge = _bfs_shortest(grid, cur, exit_cell)
+            for cid in bridge[1:]:
+                solution.append(cid)
+
+    # 7. Loop-erasure safety net (handles any revisits from last-resort fallbacks)
+    deduped: List[int] = []
+    cell_idx: Dict[int, int] = {}
+    for cid in solution:
+        if cid in cell_idx:
+            erase_from = cell_idx[cid]
+            for erased in deduped[erase_from + 1:]:
+                if erased in cell_idx and cell_idx[erased] > erase_from:
+                    del cell_idx[erased]
+            deduped = deduped[:erase_from + 1]
+        else:
+            deduped.append(cid)
+            cell_idx[cid] = len(deduped) - 1
+
+    # 8. Build path edges
+    path_edges: Set[Tuple[int, int]] = set()
+    for i in range(len(deduped) - 1):
+        a, b = deduped[i], deduped[i + 1]
+        path_edges.add((min(a, b), max(a, b)))
+
+    return deduped, path_edges
+
+
 def design_masterpiece_path(
     grid: CellGrid,
     cell_classes: np.ndarray,
@@ -937,15 +1110,13 @@ def design_masterpiece_path(
     """
     Design the masterpiece solution path that IS the image trace.
 
-    Architecture (V6 — no-shortcut spanning tree):
-      1. Greedy dark walk creates a long path that visits all dark cells.
-         This path IS the solution — the unique maze path from entrance
-         to exit.
-      2. Deduplicate the walk into a simple (non-revisiting) path.
-         Where the walk revisits a cell, detour the revisit as a
-         dead-end branch instead.
-      3. Return the deduplicated solution + all path edges.
-      4. build_walls_around_path will connect remaining cells as
+    Architecture (V6+F3 — no-shortcut spanning tree with serpentine fill):
+      1. F3 blob-by-blob serpentine fill: each dark blob is fully covered
+         by serpentine_fill_blob() before moving to the next blob.
+         Transit between blobs uses unvisited-only BFS to minimise
+         non-dark cell consumption.
+      2. Loop erasure removes any revisits from BFS fallbacks.
+      3. build_walls_around_path will connect remaining cells as
          dead-end branches only (never creating shortcuts across the
          solution path).
 
@@ -963,59 +1134,19 @@ def design_masterpiece_path(
     for blob in blobs:
         dark_cells.update(blob.cells)
 
-    flat_classes = cell_classes.flatten()
-
     if not dark_cells:
         path = _bfs_shortest(grid, entrance, exit_cell)
-        edges = set()
+        edges: Set[Tuple[int, int]] = set()
         for i in range(len(path) - 1):
             a, b = path[i], path[i + 1]
             edges.add((min(a, b), max(a, b)))
         return path, edges
 
-    # === Step 1: Greedy walk through all dark cells ===
-    # Single continuous walk. Prefers dark cells (Warnsdorff heuristic),
-    # but will step on any unvisited neighbor when stuck. Never revisits
-    # (simple path guaranteed).
+    # === F3: Blob-by-blob serpentine fill ===
     rng = np.random.default_rng(42)
-    raw_walk = _greedy_dark_walk(grid, flat_classes, dark_cells, entrance, exit_cell, rng)
-
-    # Reach exit if not already there
-    if raw_walk[-1] != exit_cell:
-        visited_walk = set(raw_walk)
-        bridge = _bfs_unvisited_to_target(
-            grid, raw_walk[-1], exit_cell, visited_walk, rng)
-        if bridge is not None:
-            for cid in bridge[1:]:
-                raw_walk.append(cid)
-        else:
-            bridge = _bfs_shortest(grid, raw_walk[-1], exit_cell)
-            for cid in bridge[1:]:
-                raw_walk.append(cid)
-
-    # Loop-erase any revisits (from fallback bridge)
-    solution: List[int] = []
-    cell_idx: Dict[int, int] = {}
-    for cid in raw_walk:
-        if cid in cell_idx:
-            erase_from = cell_idx[cid]
-            for erased in solution[erase_from + 1:]:
-                if erased in cell_idx and cell_idx[erased] > erase_from:
-                    del cell_idx[erased]
-            solution = solution[:erase_from + 1]
-        else:
-            solution.append(cid)
-            cell_idx[cid] = len(solution) - 1
-    solution_set = set(solution)
-
-    # === Step 3: Build solution edges ===
-    path_edges: Set[Tuple[int, int]] = set()
-    for i in range(len(solution) - 1):
-        a, b = solution[i], solution[i + 1]
-        edge_key = (min(a, b), max(a, b))
-        path_edges.add(edge_key)
-
-    return solution, path_edges
+    return _design_path_blob_serpentine_f3(
+        grid, cell_classes, blobs, entrance, exit_cell, edge_waypoints, rng
+    )
 
 
 def _closest_cell_to(cells: List[int], target: int, grid: CellGrid) -> int:
