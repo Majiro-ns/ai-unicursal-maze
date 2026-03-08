@@ -125,6 +125,9 @@ def _call_density_api(
     bias_strength: float,
     preset: str,
     n_segments: int,
+    extra_removal_rate: float = 0.0,
+    dark_threshold: float = 0.3,
+    light_threshold: float = 0.7,
 ) -> dict:
     files = {
         "file": (
@@ -151,6 +154,9 @@ def _call_density_api(
         "bias_strength": f"{float(bias_strength):.2f}",
         "preset": preset,
         "n_segments": str(int(n_segments)),
+        "extra_removal_rate": f"{float(extra_removal_rate):.2f}",
+        "dark_threshold": f"{float(dark_threshold):.2f}",
+        "light_threshold": f"{float(light_threshold):.2f}",
     }
     response = requests.post(DENSITY_API_URL, files=files, data=data, timeout=120)
     response.raise_for_status()
@@ -286,6 +292,43 @@ def _density_maze_tab() -> None:
             help="視覚的に美しい解経路（輝度変化が大きい経路）を選択するヒューリスティクス。",
         )
 
+        st.markdown("### Phase 2b: 密度制御（ループ許容）")
+
+        extra_removal_rate = st.slider(
+            "追加壁除去率（暗部ループ）",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.0,
+            step=0.05,
+            help=(
+                "暗いセルで追加の壁を除去しループを作る強度。"
+                "0.0=完全なspanning tree（デフォルト）、1.0=最大ループ。"
+                "大きいほど暗部の通路が密集する。"
+            ),
+        )
+
+        if extra_removal_rate > 0.0:
+            with st.expander("密度制御パラメータ（詳細）", expanded=False):
+                dark_threshold = st.slider(
+                    "暗部閾値",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.3,
+                    step=0.05,
+                    help="この輝度未満のセルを「暗部」として追加壁除去の対象にする。",
+                )
+                light_threshold = st.slider(
+                    "明部閾値",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.7,
+                    step=0.05,
+                    help="この輝度超のセルを「明部」として通路削除の対象にする（連結性を保護）。",
+                )
+        else:
+            dark_threshold = 0.3
+            light_threshold = 0.7
+
         st.markdown("### 出力設定")
 
         width = st.number_input("出力幅 (px)", min_value=200, max_value=3000, value=800, step=100)
@@ -340,6 +383,9 @@ def _density_maze_tab() -> None:
                         bias_strength=float(bias_strength),
                         preset=str(preset),
                         n_segments=int(n_segments),
+                        extra_removal_rate=float(extra_removal_rate),
+                        dark_threshold=float(dark_threshold),
+                        light_threshold=float(light_threshold),
                     )
 
                 maze_id = payload.get("maze_id", "density-maze")
