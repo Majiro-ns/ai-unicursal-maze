@@ -3,9 +3,12 @@
 Phase 1: 木の直径の両端を BFS で求める。
 Phase 2: 複数候補から「美しい」解経路を選択するヒューリスティクスを追加。
          スコア = 経路長 × 平均輝度（明るい領域を通る長い経路が高スコア）。
+Phase 2b: Dijkstra による画像適応ルーティング。
+          エッジコスト = 1 - avg_luminance → 明部を優先的に通る。
 """
 from __future__ import annotations
 
+import heapq
 from collections import deque
 from typing import Dict, List, Optional, Tuple
 
@@ -112,3 +115,94 @@ def find_entrance_exit_heuristic(
             best_entrance, best_exit, best_path = start, far, path
 
     return best_entrance, best_exit, best_path
+
+
+def find_image_guided_path(
+    adj: Dict[int, List[int]],
+    num_cells: int,
+    luminance: np.ndarray,
+    grid_rows: int,
+    grid_cols: int,
+) -> Tuple[int, int, List[int]]:
+    """
+    Phase 2b: Dijkstra による画像適応ルーティング。
+
+    解法経路が画像の明るい部分を優先的に通るように Dijkstra でルーティングする。
+    masterpieceの「白い道を塗りつぶした完成形」を実現するための柱3実装。
+
+    アルゴリズム:
+      1. 各エッジのコスト = 1.0 - avg(luminance[u], luminance[v])
+         → 明るいセル間(luminance≈1.0) → コスト≈0.0 → 優先的に通る
+         → 暗いセル間(luminance≈0.0) → コスト≈1.0 → 迂回する
+      2. 入口: 4隅の中で最も暗い角 (masterpiece の塗り始め = 暗い角から出発)
+         出口: 入口の対角線上の角
+      3. Dijkstra で入口→出口の最小コスト経路を求める
+
+    Args:
+        adj: 隣接リスト (spanning tree)
+        num_cells: グリッドのセル総数
+        luminance: CellGrid.luminance (rows×cols の float 0-1 配列)
+        grid_rows: グリッドの行数
+        grid_cols: グリッドの列数
+
+    Returns:
+        (entrance_cell_id, exit_cell_id, solution_path)
+    """
+    if num_cells <= 1:
+        return 0, 0, [0]
+
+    flat_lum = luminance.flatten()
+
+    # --- 入口/出口の選択: 4隅から輝度最低を入口, 対角を出口 ---
+    corners = {
+        "tl": 0,
+        "tr": grid_cols - 1,
+        "bl": grid_cols * (grid_rows - 1),
+        "br": num_cells - 1,
+    }
+    diag_pairs = [("tl", "br"), ("tr", "bl")]
+    opposite = {"tl": "br", "br": "tl", "tr": "bl", "bl": "tr"}
+
+    # 4隅の中で輝度最低の角を入口
+    entrance_key = min(corners.keys(), key=lambda k: float(flat_lum[corners[k]]))
+    exit_key = opposite[entrance_key]
+    entrance = corners[entrance_key]
+    exit_cell = corners[exit_key]
+
+    # --- Dijkstra ---
+    # コスト = 1.0 - avg(lum_u, lum_v) ∈ [0, 1]
+    INF = float("inf")
+    dist: List[float] = [INF] * num_cells
+    prev: List[int] = [-1] * num_cells
+    dist[entrance] = 0.0
+    heap: List[Tuple[float, int]] = [(0.0, entrance)]
+
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d > dist[u]:
+            continue
+        for v in adj.get(u, []):
+            edge_cost = 1.0 - (float(flat_lum[u]) + float(flat_lum[v])) / 2.0
+            edge_cost = max(0.0, edge_cost)  # 数値誤差ガード
+            nd = d + edge_cost
+            if nd < dist[v]:
+                dist[v] = nd
+                prev[v] = u
+                heapq.heappush(heap, (nd, v))
+
+    # --- 経路復元 ---
+    if dist[exit_cell] == INF:
+        # exit_cell に到達できない場合（グリッドが小さい等）は BFS フォールバック
+        return find_entrance_exit_and_path(adj, num_cells)
+
+    path: List[int] = []
+    cur = exit_cell
+    while cur != -1:
+        path.append(cur)
+        cur = prev[cur]
+    path.reverse()
+
+    if not path or path[0] != entrance:
+        return find_entrance_exit_and_path(adj, num_cells)
+
+    return entrance, exit_cell, path

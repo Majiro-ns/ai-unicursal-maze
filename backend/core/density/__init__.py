@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 import numpy as np
 from PIL import Image
 
-from .entrance_exit import find_entrance_exit_and_path, find_entrance_exit_heuristic
+from .entrance_exit import find_entrance_exit_and_path, find_entrance_exit_heuristic, find_image_guided_path
 from .exporter import maze_to_png, maze_to_svg
 from .grid_builder import build_cell_grid, build_cell_grid_with_edges, build_cell_grid_with_texture, CellGrid
 from .maze_builder import build_spanning_tree, post_process_density
@@ -65,6 +65,12 @@ def generate_density_maze(
     thickness_range: float = 1.5,
     # 解経路描画モード: False=masterpiece白線 / True=デバッグ用オレンジ+マーカー
     solution_highlight: bool = False,
+    # Phase 2b: 解経路画像適応ルーティング（masterpiece柱3）
+    use_image_guided: bool = False,
+    # Phase 2b: 密度制御（ループ許容）
+    extra_removal_rate: float = 0.0,
+    dark_threshold: float = 0.3,
+    light_threshold: float = 0.7,
 ) -> DensityMazeResult:
     """
     密度迷路パイプライン（Phase 1/2 共用）。
@@ -133,7 +139,22 @@ def generate_density_maze(
 
     adj = build_spanning_tree(grid)
 
-    if use_heuristic:
+    # Phase 2b: ループ許容密度後処理
+    if extra_removal_rate > 0.0 or light_threshold < 1.0:
+        adj = post_process_density(
+            adj,
+            grid,
+            extra_removal_rate=extra_removal_rate,
+            dark_threshold=dark_threshold,
+            light_threshold=light_threshold,
+        )
+
+    if use_image_guided:
+        # Phase 2b: 画像適応ルーティング（明部を通る Dijkstra 最短経路）
+        entrance, exit_cell, solution_path = find_image_guided_path(
+            adj, grid.num_cells, grid.luminance, grid_rows, grid_cols
+        )
+    elif use_heuristic:
         entrance, exit_cell, solution_path = find_entrance_exit_heuristic(
             adj, grid.num_cells, grid.luminance
         )

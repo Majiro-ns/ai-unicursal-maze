@@ -654,3 +654,112 @@ def test_solution_path_all_steps_adjacent():
         assert path[i + 1] in adj.get(path[i], []), (
             f"解経路ステップ {i}→{i+1}: セル {path[i]} と {path[i+1]} は非隣接"
         )
+
+
+# --- Phase 2b: 画像適応ルーティング (find_image_guided_path) テスト ---
+
+from backend.core.density.entrance_exit import find_image_guided_path
+from backend.core.density.preprocess import preprocess_image
+
+
+def _make_bright_dark_image(rows: int = 8, cols: int = 8) -> tuple:
+    """
+    左半分が暗(0)、右半分が明(255)の画像を返す。
+    find_image_guided_path は明部を通る経路を選ぶはず。
+    """
+    arr = np.zeros((rows, cols), dtype=np.uint8)
+    arr[:, cols // 2:] = 255
+    img = Image.fromarray(arr, mode="L")
+    return img, arr
+
+
+def test_image_guided_path_bright_region_lower_cost():
+    """
+    明るいセル間エッジのコストが暗いセル間より低いことを検証。
+    edge_cost = 1.0 - avg(lum_u, lum_v)
+    → 明(1.0): cost ≈ 0.0、暗(0.0): cost ≈ 1.0
+    """
+    from backend.core.density.grid_builder import build_cell_grid
+    from backend.core.density.maze_builder import build_spanning_tree
+
+    img, _ = _make_bright_dark_image(8, 8)
+    gray = preprocess_image(img, max_side=64)
+    grid = build_cell_grid(gray, 4, 4)
+    adj = build_spanning_tree(grid)
+    flat_lum = grid.luminance.flatten()
+
+    # 明るいエッジ: luminance ≈ 1.0 → cost ≈ 0.0
+    bright_costs = []
+    dark_costs = []
+    for u, neighbors in adj.items():
+        for v in neighbors:
+            lum_u = float(flat_lum[u])
+            lum_v = float(flat_lum[v])
+            cost = 1.0 - (lum_u + lum_v) / 2.0
+            avg = (lum_u + lum_v) / 2.0
+            if avg > 0.7:
+                bright_costs.append(cost)
+            elif avg < 0.3:
+                dark_costs.append(cost)
+
+    # 明部と暗部のエッジが存在し、明部のコストが低い
+    if bright_costs and dark_costs:
+        assert min(bright_costs) < max(dark_costs), (
+            f"明部コスト最小値({min(bright_costs):.3f}) >= 暗部コスト最大値({max(dark_costs):.3f})"
+        )
+
+
+def test_image_guided_path_entrance_exit_reachable():
+    """use_image_guided=True で生成した迷路の入口→出口が BFS で到達可能。"""
+    img = _make_small_image(32, 32)
+    result = generate_density_maze(img, grid_size=4, max_side=32, use_image_guided=True)
+    entrance = result.entrance
+    exit_cell = result.exit_cell
+
+    gray = preprocess_image(img, max_side=32)
+    grid = build_cell_grid(gray, result.grid_rows, result.grid_cols)
+    adj = build_spanning_tree(grid)
+
+    visited: set = {entrance}
+    q: deque = deque([entrance])
+    found = False
+    while q:
+        u = q.popleft()
+        if u == exit_cell:
+            found = True
+            break
+        for v in adj.get(u, []):
+            if v not in visited:
+                visited.add(v)
+                q.append(v)
+    assert found, f"use_image_guided: BFS で {entrance} → {exit_cell} に到達できない"
+
+
+def test_image_guided_path_white_paint_increases_white_area():
+    """
+    show_solution=True (masterpiece白線モード) で PNG 出力した場合、
+    show_solution=False より白ピクセル数が多くなる（経路が白く塗られるため）。
+    """
+    from PIL import Image as PilImage
+    import io
+
+    img = _make_small_image(64, 64)
+    # show_solution=False（解経路なし）
+    result_no_sol = generate_density_maze(
+        img, grid_size=6, max_side=64, use_image_guided=True, show_solution=False
+    )
+    # show_solution=True（masterpiece白線）
+    result_with_sol = generate_density_maze(
+        img, grid_size=6, max_side=64, use_image_guided=True, show_solution=True
+    )
+
+    def count_white(png_bytes: bytes) -> int:
+        im = PilImage.open(io.BytesIO(png_bytes)).convert("L")
+        arr = np.array(im)
+        return int(np.sum(arr > 200))
+
+    white_no_sol = count_white(result_no_sol.png_bytes)
+    white_with_sol = count_white(result_with_sol.png_bytes)
+    assert white_with_sol >= white_no_sol, (
+        f"白線塗りつぶし後({white_with_sol}px) が塗りつぶし前({white_no_sol}px) より少ない"
+    )
