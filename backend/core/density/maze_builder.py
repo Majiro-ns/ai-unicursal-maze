@@ -90,6 +90,12 @@ def post_process_density(
     # Set ベースのコピー（O(1) ルックアップ）
     adj_sets: Dict[int, Set[int]] = {i: set(nb) for i, nb in adj.items()}
 
+    # spanning tree エッジを記録（全て bridge → Step 2 でスキップ可能）
+    spanning_edges: Set[tuple] = set()
+    for u, nbs in adj.items():
+        for v in nbs:
+            spanning_edges.add((min(u, v), max(u, v)))
+
     # ----- Step 1: 暗部 — 追加壁除去でループ作成 -----
     if extra_removal_rate > 0.0:
         for r in range(grid.rows):
@@ -136,10 +142,12 @@ def post_process_density(
             cid, cid2 = bright_passages[i]
             if cid2 not in adj_sets[cid]:
                 continue  # 既に削除済み
-            # 一時的に削除
+            # spanning tree エッジは必ず bridge → 削除不可、スキップ（O(N) BFS 不要）
+            if (min(cid, cid2), max(cid, cid2)) in spanning_edges:
+                continue
+            # Step 1 で追加されたエッジのみ連結チェックを行う
             adj_sets[cid].discard(cid2)
             adj_sets[cid2].discard(cid)
-            # 連結チェック — 切断するなら元に戻す
             if not _is_connected(adj_sets, n):
                 adj_sets[cid].add(cid2)
                 adj_sets[cid2].add(cid)
