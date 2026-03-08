@@ -71,6 +71,10 @@ def generate_density_maze(
     extra_removal_rate: float = 0.0,
     dark_threshold: float = 0.3,
     light_threshold: float = 0.7,
+    # Phase 3 SVG品質改善: stroke-width 量子化レベル（0=無効, 推奨=20）
+    stroke_quantize_levels: int = 20,
+    # Phase 3 PNG DPI: None=メタデータなし, 300=印刷用, 96=Web用
+    png_dpi: Optional[int] = None,
 ) -> DensityMazeResult:
     """
     密度迷路パイプライン（Phase 1/2 共用）。
@@ -168,6 +172,7 @@ def generate_density_maze(
         show_solution=show_solution,
         thickness_range=thickness_range,
         solution_highlight=solution_highlight,
+        stroke_quantize_levels=stroke_quantize_levels,
     )
     png_bytes = maze_to_png(
         grid, adj, entrance, exit_cell, solution_path,
@@ -176,6 +181,7 @@ def generate_density_maze(
         show_solution=show_solution,
         thickness_range=thickness_range,
         solution_highlight=solution_highlight,
+        dpi=png_dpi,
     )
 
     return DensityMazeResult(

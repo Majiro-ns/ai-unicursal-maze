@@ -60,8 +60,16 @@ class TestVariableWallSVG:
     """maze_to_svg における可変壁厚の結合テスト。"""
 
     def _extract_line_widths(self, svg: str) -> list[float]:
-        """<line> 要素の stroke-width のみを抽出（解経路 <path> を除外）。"""
+        """壁グループの stroke-width を抽出。
+        Phase 3以降: <g stroke-width="..."> 形式に対応。
+        旧形式フォールバック: <line ... stroke-width="...">。
+        """
         import re
+        # Phase 3: <g stroke="black" stroke-width="X.XXX"> から取得
+        g_widths = re.findall(r'<g [^>]*stroke-width="([\d.]+)"', svg)
+        if g_widths:
+            return [float(x) for x in g_widths]
+        # 旧形式フォールバック
         return [float(x) for x in re.findall(r'<line [^/]* stroke-width="([\d.]+)"', svg)]
 
     def test_dark_image_svg_has_thicker_walls(self):
