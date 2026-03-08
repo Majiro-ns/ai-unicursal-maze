@@ -18,6 +18,9 @@ class CellGrid:
     cols: int
     luminance: np.ndarray  # (rows, cols) float 0〜1。セルごとの平均輝度
     walls: List[Tuple[int, int, float]]  # (cell_a, cell_b, weight)。cell_a < cell_b。weight 小→先に除去
+    # Xu-Kaplan 可変セルサイズ用（variable_cell_size=True 時に設定）
+    row_heights: Optional[np.ndarray] = None  # (rows,) 各行の高さ比率（合計=1.0）
+    col_widths: Optional[np.ndarray] = None   # (cols,) 各列の幅比率（合計=1.0）
 
     @property
     def num_cells(self) -> int:
@@ -28,6 +31,42 @@ class CellGrid:
 
     def cell_rc(self, cid: int) -> Tuple[int, int]:
         return cid // self.cols, cid % self.cols
+
+
+def compute_cell_size_map(
+    luminance: np.ndarray,
+    wall_width: float = 2.0,
+    min_cell_px: float = 4.0,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Xu-Kaplan G=(S-W)/S 公式で各行・列の相対サイズを計算する。
+
+    G = luminance（明るい = 広い通路 = 大セル）
+    S = W / (1 - G)
+
+    G → 1 で S → ∞ になるため G_max=0.98 でクリップ。
+    G_min = W / min_cell_px（最小セルサイズ保証）。
+
+    Returns:
+        row_heights: (rows,) 各行の高さ比率（合計=1.0）
+        col_widths:  (cols,) 各列の幅比率（合計=1.0）
+    """
+    G_min = wall_width / min_cell_px  # e.g., 2.0/4.0 = 0.50
+    G_max = 0.98
+    G = np.clip(luminance, G_min, G_max)
+
+    # S = W / (1 - G) — 各セルのピクセルサイズ (rows, cols)
+    S = wall_width / (1.0 - G)
+
+    # 各行の平均サイズ（列方向平均）・各列の平均サイズ（行方向平均）
+    row_S = S.mean(axis=1)  # (rows,)
+    col_S = S.mean(axis=0)  # (cols,)
+
+    # 正規化して比率へ（合計=1.0）
+    row_heights = row_S / row_S.sum()
+    col_widths = col_S / col_S.sum()
+
+    return row_heights, col_widths
 
 
 def build_density_map(gray: np.ndarray, grid_rows: int, grid_cols: int) -> np.ndarray:
@@ -66,11 +105,13 @@ def build_cell_grid(
     grid_rows: int,
     grid_cols: int,
     density_factor: float = 1.0,
+    variable_cell_size: bool = False,
 ) -> CellGrid:
     """
     濃度マップを元にセルグリッドと壁リストを構築。
     壁の weight = 平均輝度（明るいセルほど weight 大＝後から除去＝道が粗い）。
     density_factor は輝度差の強調度（未使用でも可）。
+    variable_cell_size=True: Xu-Kaplan 公式で row_heights/col_widths を計算して格納。
     """
     lum = build_density_map(gray, grid_rows, grid_cols)
 
@@ -93,7 +134,13 @@ def build_cell_grid(
 
     walls: List[Tuple[int, int, float]] = list(zip(c1_all.tolist(), c2_all.tolist(), w_all.tolist()))
 
-    return CellGrid(rows=grid_rows, cols=grid_cols, luminance=lum, walls=walls)
+    row_heights: Optional[np.ndarray] = None
+    col_widths: Optional[np.ndarray] = None
+    if variable_cell_size:
+        row_heights, col_widths = compute_cell_size_map(lum)
+
+    return CellGrid(rows=grid_rows, cols=grid_cols, luminance=lum, walls=walls,
+                    row_heights=row_heights, col_widths=col_widths)
 
 
 def build_cell_grid_with_edges(
@@ -105,6 +152,7 @@ def build_cell_grid_with_edges(
     edge_sigma: float = 1.0,
     edge_low_threshold: float = 0.05,
     edge_high_threshold: float = 0.20,
+    variable_cell_size: bool = False,
 ) -> CellGrid:
     """
     Phase 2 Stage 4: 輝度ベースの壁リストに Canny エッジ強調を適用したセルグリッドを返す。
@@ -127,7 +175,8 @@ def build_cell_grid_with_edges(
     """
     from .edge_enhancer import detect_edge_map, apply_edge_boost_to_walls
 
-    base_grid = build_cell_grid(gray, grid_rows, grid_cols, density_factor=density_factor)
+    base_grid = build_cell_grid(gray, grid_rows, grid_cols, density_factor=density_factor,
+                                variable_cell_size=variable_cell_size)
 
     if edge_weight <= 0.0:
         return base_grid
@@ -146,6 +195,8 @@ def build_cell_grid_with_edges(
         cols=grid_cols,
         luminance=base_grid.luminance,
         walls=boosted_walls,
+        row_heights=base_grid.row_heights,
+        col_widths=base_grid.col_widths,
     )
 
 
@@ -177,6 +228,7 @@ def build_cell_grid_with_texture(
     gradient_angles: Optional[np.ndarray] = None,
     density_factor: float = 1.0,
     bias_strength: float = 0.5,
+    variable_cell_size: bool = False,
 ) -> CellGrid:
     """
     Phase 2: テクスチャ種別とグラジエント方向を考慮した壁重み計算。
@@ -256,4 +308,10 @@ def build_cell_grid_with_texture(
 
                 walls.append((min(cid, cid2), max(cid, cid2), float(np.clip(weight, 0.0, 1.0))))
 
-    return CellGrid(rows=grid_rows, cols=grid_cols, luminance=lum, walls=walls)
+    row_heights_tex: Optional[np.ndarray] = None
+    col_widths_tex: Optional[np.ndarray] = None
+    if variable_cell_size:
+        row_heights_tex, col_widths_tex = compute_cell_size_map(lum)
+
+    return CellGrid(rows=grid_rows, cols=grid_cols, luminance=lum, walls=walls,
+                    row_heights=row_heights_tex, col_widths=col_widths_tex)

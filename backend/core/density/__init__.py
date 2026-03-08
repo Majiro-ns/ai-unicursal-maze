@@ -34,6 +34,10 @@ MASTERPIECE_PRESET: dict = {
     "show_solution": False,
     "edge_weight": 0.5,
     "stroke_width": 2.0,
+    "wall_color_min": 40,
+    "wall_color_max": 175,
+    "variable_cell_size": True,
+    "use_gradient_walls": True,  # Phase 4: SVG linearGradient 壁色グラデーション
 }
 
 
@@ -90,6 +94,13 @@ def generate_density_maze(
     stroke_quantize_levels: int = 20,
     # Phase 3 PNG DPI: None=メタデータなし, 300=印刷用, 96=Web用
     png_dpi: Optional[int] = None,
+    # 壁色コントラスト保証: 背景(255)との差≥(255-wall_color_max)
+    wall_color_min: int = 40,
+    wall_color_max: int = 175,
+    # MAZE-Q2: Xu-Kaplan 可変セルサイズ（False=均一・後方互換デフォルト）
+    variable_cell_size: bool = False,
+    # Phase 4: SVG linearGradient 壁色グラデーション（False=既存挙動・後方互換）
+    use_gradient_walls: bool = False,
 ) -> DensityMazeResult:
     """
     密度迷路パイプライン（Phase 1/2 共用）。
@@ -141,6 +152,7 @@ def generate_density_maze(
             gradient_angles=gradient_angles,
             density_factor=density_factor,
             bias_strength=bias_strength,
+            variable_cell_size=variable_cell_size,
         )
     else:
         # Phase 1 相当（+ エッジ強調オプション）
@@ -152,9 +164,11 @@ def generate_density_maze(
                 edge_sigma=edge_sigma,
                 edge_low_threshold=edge_low_threshold,
                 edge_high_threshold=edge_high_threshold,
+                variable_cell_size=variable_cell_size,
             )
         else:
-            grid = build_cell_grid(gray, grid_rows, grid_cols, density_factor=density_factor)
+            grid = build_cell_grid(gray, grid_rows, grid_cols, density_factor=density_factor,
+                                   variable_cell_size=variable_cell_size)
 
     adj = build_spanning_tree(grid)
 
@@ -188,6 +202,9 @@ def generate_density_maze(
         thickness_range=thickness_range,
         solution_highlight=solution_highlight,
         stroke_quantize_levels=stroke_quantize_levels,
+        wall_color_min=wall_color_min,
+        wall_color_max=wall_color_max,
+        use_gradient_walls=use_gradient_walls,
     )
     png_bytes = maze_to_png(
         grid, adj, entrance, exit_cell, solution_path,
@@ -197,6 +214,8 @@ def generate_density_maze(
         thickness_range=thickness_range,
         solution_highlight=solution_highlight,
         dpi=png_dpi,
+        wall_color_min=wall_color_min,
+        wall_color_max=wall_color_max,
     )
 
     return DensityMazeResult(
