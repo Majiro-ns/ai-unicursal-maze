@@ -59,6 +59,8 @@ def generate_density_maze(
     edge_sigma: float = 1.0,
     edge_low_threshold: float = 0.05,
     edge_high_threshold: float = 0.20,
+    # Phase 2 CLAHEコントラスト補正
+    contrast_boost: float = 1.0,
 ) -> DensityMazeResult:
     """
     密度迷路パイプライン（Phase 1/2 共用）。
@@ -71,7 +73,7 @@ def generate_density_maze(
     import uuid
 
     mid = maze_id or f"density-{uuid.uuid4().hex[:8]}"
-    gray = preprocess_image(image, max_side=max_side)
+    gray = preprocess_image(image, max_side=max_side, contrast_boost=contrast_boost)
     grid_rows = min(grid_size, max(gray.shape[0] // 4, 1))
     grid_cols = min(grid_size, max(gray.shape[1] // 4, 1))
 
