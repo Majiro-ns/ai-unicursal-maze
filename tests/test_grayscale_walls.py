@@ -25,8 +25,8 @@ from backend.core.density.exporter import _wall_color
 # ============================================================
 
 def test_wall_color_black():
-    """avg_lum=0.0（黒画素）→ rgb(0,0,0)。"""
-    assert _wall_color(0.0) == "rgb(0,0,0)"
+    """avg_lum=0.0（黒画素）→ rgb(80,80,80)（下限80）。"""
+    assert _wall_color(0.0) == "rgb(80,80,80)"
 
 
 def test_wall_color_white():
@@ -59,11 +59,11 @@ def test_wall_color_monotone():
 
 
 def test_wall_color_range():
-    """返り値の v 値は [0, 220] の範囲に収まる。"""
+    """返り値の v 値は [80, 220] の範囲に収まる（下限80）。"""
     for lum in np.linspace(0.0, 1.0, 21):
         color = _wall_color(float(lum))
         v = int(color.split("(")[1].split(",")[0])
-        assert 0 <= v <= 220, f"avg_lum={lum:.2f}: v={v} が範囲外"
+        assert 80 <= v <= 220, f"avg_lum={lum:.2f}: v={v} が範囲外"
 
 
 # ============================================================

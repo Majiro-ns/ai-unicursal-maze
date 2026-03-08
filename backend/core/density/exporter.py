@@ -41,12 +41,14 @@ def _wall_stroke(stroke_width_base: float, avg_lum: float, thickness_range: floa
 def _wall_color(avg_lum: float) -> str:
     """
     壁の描画色をグレースケールで返す（SVG stroke / PNG fill 共通）。
-      avg_lum=0（黒画素）→ rgb(0,0,0)     = 黒（最大コントラスト）
+      avg_lum=0（黒画素）→ rgb(80,80,80)  = 濃灰（下限80でコントラストを確保）
       avg_lum=1（白画素）→ rgb(220,220,220)= 淡灰（白背景に消えない範囲で最淡）
     完全白(255)にしないのは白背景との区別がつかなくなるため。
-    公式: v = int(avg_lum * 220)
+    下限80: 明部(avg_lum=0.78)でも rgb(172,172,172)→白背景との差を維持し
+            circle画像SSIM低下（0.23→目標0.45以上）を防ぐ（cmd_360k_a2b修正）。
+    公式: v = max(80, int(avg_lum * 220))
     """
-    v = int(avg_lum * 220)
+    v = max(80, int(avg_lum * 220))
     return f"rgb({v},{v},{v})"
 
 
@@ -331,7 +333,7 @@ def maze_to_png(
                 if (min(cid, cid2), max(cid, cid2)) not in removed:
                     avg_lum = float((grid.luminance[r, c] + grid.luminance[r, c + 1]) / 2.0)
                     sw = max(1, round(_wall_stroke(stroke_width, avg_lum, thickness_range)))
-                    v = int(avg_lum * 220)
+                    v = max(80, int(avg_lum * 220))
                     a = to_px(c + 1, r)
                     b = to_px(c + 1, r + 1)
                     draw.line([a, b], fill=(v, v, v), width=sw)
@@ -341,7 +343,7 @@ def maze_to_png(
                 if (min(cid, cid2), max(cid, cid2)) not in removed:
                     avg_lum = float((grid.luminance[r, c] + grid.luminance[r + 1, c]) / 2.0)
                     sw = max(1, round(_wall_stroke(stroke_width, avg_lum, thickness_range)))
-                    v = int(avg_lum * 220)
+                    v = max(80, int(avg_lum * 220))
                     a = to_px(c, r + 1)
                     b = to_px(c + 1, r + 1)
                     draw.line([a, b], fill=(v, v, v), width=sw)
