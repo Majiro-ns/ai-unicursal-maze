@@ -141,8 +141,21 @@ async def generate_density_maze(
     show_solution: bool | None = Form(True),
     density_factor: float | None = Form(1.0),
     max_side: int | None = Form(512),
+    # Phase 2: A3 エッジ強調 (Canny)
+    edge_weight: float | None = Form(0.0),
+    edge_sigma: float | None = Form(1.0),
+    edge_low_threshold: float | None = Form(0.05),
+    edge_high_threshold: float | None = Form(0.20),
+    # Phase 2: A2 CLAHEコントラスト
+    contrast_boost: float | None = Form(1.0),
+    # Phase 2: テクスチャ
+    use_texture: bool | None = Form(False),
+    use_heuristic: bool | None = Form(False),
+    bias_strength: float | None = Form(0.5),
+    preset: str | None = Form("generic"),
+    n_segments: int | None = Form(4),
 ):
-    """密度迷路 Phase 1: 濃度マップ→グリッド→Kruskal→1本の解経路・入口1・出口1。"""
+    """密度迷路 Phase 1/2: 濃度マップ→グリッド→Kruskal→解経路。Phase2パラメータ対応。"""
     raw_bytes = await file.read()
     if len(raw_bytes) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
@@ -153,12 +166,19 @@ async def generate_density_maze(
     except UnidentifiedImageError:
         raise HTTPException(status_code=400, detail="Unsupported or invalid image file.")
 
-    gs = max(2, min(100, grid_size)) if grid_size is not None else 50
+    gs = max(2, min(200, grid_size)) if grid_size is not None else 50
     w = width or 800
     h = height or 600
     sw = float(stroke_width) if stroke_width is not None else 2.0
     df = float(density_factor) if density_factor is not None else 1.0
     ms = max_side or 512
+    ew = max(0.0, min(2.0, float(edge_weight))) if edge_weight is not None else 0.0
+    e_sigma = max(0.3, min(5.0, float(edge_sigma))) if edge_sigma is not None else 1.0
+    e_low = max(0.01, min(0.5, float(edge_low_threshold))) if edge_low_threshold is not None else 0.05
+    e_high = max(0.05, min(0.8, float(edge_high_threshold))) if edge_high_threshold is not None else 0.20
+    cb = max(0.0, min(3.0, float(contrast_boost))) if contrast_boost is not None else 1.0
+    bs = max(0.0, min(1.0, float(bias_strength))) if bias_strength is not None else 0.5
+    ns = max(1, min(8, int(n_segments))) if n_segments is not None else 4
 
     result = generate_density_maze_core(
         image,
@@ -169,6 +189,16 @@ async def generate_density_maze(
         stroke_width=sw,
         show_solution=bool(show_solution) if show_solution is not None else True,
         density_factor=df,
+        edge_weight=ew,
+        edge_sigma=e_sigma,
+        edge_low_threshold=e_low,
+        edge_high_threshold=e_high,
+        contrast_boost=cb,
+        use_texture=bool(use_texture) if use_texture is not None else False,
+        use_heuristic=bool(use_heuristic) if use_heuristic is not None else False,
+        bias_strength=bs,
+        preset=preset or "generic",
+        n_segments=ns,
     )
 
     r, c = result.grid_rows, result.grid_cols

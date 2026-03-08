@@ -7,6 +7,7 @@ import streamlit as st
 from PIL import Image, ImageDraw
 
 API_URL = (os.environ.get("MAZE_API_URL", "http://localhost:8000/api/generate_maze") or "").strip()
+DENSITY_API_URL = (os.environ.get("DENSITY_API_URL", "http://localhost:8000/api/generate_density_maze") or "").strip()
 
 
 def _call_api(
@@ -105,13 +106,305 @@ def _show_face_band_preview(
         st.info(f"顔帯域プレビューの生成に失敗しました: {exc}")
 
 
-def main() -> None:
-    st.title("AI 一筆迷路ジェネレーター")
-    st.write(
-        "画像から線画を抽出し、一筆書き→迷路→ダミー枝追加という 4 段階で確認できるビューです。"
+def _call_density_api(
+    uploaded_file: st.runtime.uploaded_file_manager.UploadedFile,  # type: ignore[attr-defined]
+    grid_size: int,
+    width: int,
+    height: int,
+    stroke_width: float,
+    show_solution: bool,
+    density_factor: float,
+    max_side: int,
+    edge_weight: float,
+    edge_sigma: float,
+    edge_low_threshold: float,
+    edge_high_threshold: float,
+    contrast_boost: float,
+    use_texture: bool,
+    use_heuristic: bool,
+    bias_strength: float,
+    preset: str,
+    n_segments: int,
+) -> dict:
+    files = {
+        "file": (
+            uploaded_file.name,
+            uploaded_file.getvalue(),
+            uploaded_file.type or "application/octet-stream",
+        )
+    }
+    data = {
+        "grid_size": str(int(grid_size)),
+        "width": str(int(width)),
+        "height": str(int(height)),
+        "stroke_width": f"{float(stroke_width):.1f}",
+        "show_solution": "true" if show_solution else "false",
+        "density_factor": f"{float(density_factor):.2f}",
+        "max_side": str(int(max_side)),
+        "edge_weight": f"{float(edge_weight):.2f}",
+        "edge_sigma": f"{float(edge_sigma):.1f}",
+        "edge_low_threshold": f"{float(edge_low_threshold):.3f}",
+        "edge_high_threshold": f"{float(edge_high_threshold):.3f}",
+        "contrast_boost": f"{float(contrast_boost):.2f}",
+        "use_texture": "true" if use_texture else "false",
+        "use_heuristic": "true" if use_heuristic else "false",
+        "bias_strength": f"{float(bias_strength):.2f}",
+        "preset": preset,
+        "n_segments": str(int(n_segments)),
+    }
+    response = requests.post(DENSITY_API_URL, files=files, data=data, timeout=120)
+    response.raise_for_status()
+    return response.json()
+
+
+def _density_maze_tab() -> None:
+    """密度迷路（Phase 2）のパラメータチューニングUI。"""
+    st.markdown("## 密度迷路モード（画像→グリッド迷路）")
+    st.caption(
+        "画像の明暗を通路密度に変換します。暗い領域=通路が密集（黒く見える）、"
+        "明るい領域=通路が疎（白く見える）。"
     )
 
-    st.sidebar.header("出力オプション")
+    col_l, col_r = st.columns([1, 2])
+
+    with col_l:
+        st.markdown("### 基本パラメータ")
+
+        grid_size = st.slider(
+            "グリッドサイズ",
+            min_value=10,
+            max_value=150,
+            value=50,
+            step=5,
+            help="横・縦のセル数（正方形）。大きいほど細密な迷路。10〜150。",
+        )
+
+        density_factor = st.slider(
+            "密度倍率",
+            min_value=0.5,
+            max_value=3.0,
+            value=1.0,
+            step=0.1,
+            help="輝度差の強調度。大きいほど暗部と明部の通路差が際立つ。0.5〜3.0。",
+        )
+
+        st.markdown("### Phase 2: 輝度前処理")
+
+        contrast_boost = st.slider(
+            "コントラスト強調 (CLAHE)",
+            min_value=0.0,
+            max_value=3.0,
+            value=1.0,
+            step=0.1,
+            help="CLAHE適応ヒストグラム均等化の強度。0.0=無効、1.0=標準、3.0=最大。",
+        )
+
+        st.markdown("### Phase 2 Stage 4: エッジ強調")
+
+        edge_weight = st.slider(
+            "エッジ強調（Canny）",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.0,
+            step=0.05,
+            help=(
+                "Cannyエッジ検出で元画像の輪郭部分の壁を保持する強度。"
+                "0.0=なし（Phase1相当）、1.0=最大（輪郭が白い線として残る）。"
+            ),
+        )
+
+        if edge_weight > 0.0:
+            with st.expander("Cannyパラメータ（詳細）", expanded=False):
+                edge_sigma = st.slider(
+                    "ガウシアンぼかし (sigma)",
+                    min_value=0.3,
+                    max_value=5.0,
+                    value=1.0,
+                    step=0.1,
+                    help="Canny前のガウシアンぼかし強度。大きいほどノイズ耐性が上がるが、細かいエッジを見逃す。",
+                )
+                edge_low_threshold = st.slider(
+                    "Canny 下限閾値",
+                    min_value=0.01,
+                    max_value=0.30,
+                    value=0.05,
+                    step=0.01,
+                    help="Canny二重閾値の下限（0〜1）。小さいほど多くのエッジを検出。",
+                )
+                edge_high_threshold = st.slider(
+                    "Canny 上限閾値",
+                    min_value=0.05,
+                    max_value=0.60,
+                    value=0.20,
+                    step=0.01,
+                    help="Canny二重閾値の上限（0〜1）。大きいほど強いエッジのみ検出。",
+                )
+        else:
+            edge_sigma = 1.0
+            edge_low_threshold = 0.05
+            edge_high_threshold = 0.20
+
+        st.markdown("### テクスチャ（Phase 2）")
+
+        use_texture = st.checkbox(
+            "テクスチャ分類を使う",
+            value=False,
+            help="K-meansで輝度を分割しテクスチャパターン（RANDOM/DIRECTIONAL/SPIRAL）を適用。",
+        )
+
+        if use_texture:
+            preset = st.selectbox(
+                "テクスチャプリセット",
+                options=["generic", "face", "landscape"],
+                index=0,
+                format_func=lambda x: {"generic": "汎用", "face": "顔画像向け", "landscape": "風景向け"}[x],
+            )
+            n_segments = st.slider(
+                "クラスタ数",
+                min_value=2,
+                max_value=8,
+                value=4,
+                step=1,
+                help="K-meansの輝度クラスタ数。2〜8。",
+            )
+            bias_strength = st.slider(
+                "テクスチャバイアス強度",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.5,
+                step=0.05,
+                help="テクスチャ方向バイアスの強度。0=なし、1=最大。",
+            )
+        else:
+            preset = "generic"
+            n_segments = 4
+            bias_strength = 0.5
+
+        use_heuristic = st.checkbox(
+            "解ヒューリスティクスを使う",
+            value=False,
+            help="視覚的に美しい解経路（輝度変化が大きい経路）を選択するヒューリスティクス。",
+        )
+
+        st.markdown("### 出力設定")
+
+        width = st.number_input("出力幅 (px)", min_value=200, max_value=3000, value=800, step=100)
+        height = st.number_input("出力高さ (px)", min_value=200, max_value=3000, value=600, step=100)
+        stroke_width = st.slider("線の太さ", min_value=1.0, max_value=10.0, value=2.0, step=0.5)
+        max_side = st.slider(
+            "画像前処理サイズ上限",
+            min_value=64,
+            max_value=1024,
+            value=512,
+            step=64,
+            help="入力画像の長辺をこのピクセル数以下にリサイズしてから処理。大きいほど高精度。",
+        )
+        show_solution = st.checkbox("解経路を表示", value=True)
+
+    with col_r:
+        st.markdown("### 画像アップロードと生成")
+
+        uploaded_density = st.file_uploader(
+            "画像ファイル（JPG / PNG）",
+            type=["png", "jpg", "jpeg"],
+            key="density_uploader",
+        )
+
+        if uploaded_density is not None:
+            preview_img = Image.open(BytesIO(uploaded_density.getvalue()))
+            st.image(preview_img, caption="入力画像プレビュー", use_column_width=True)
+
+        if st.button("密度迷路を生成", type="primary"):
+            if uploaded_density is None:
+                st.warning("先に画像をアップロードしてください。")
+                return
+
+            try:
+                with st.spinner("密度迷路を生成中..."):
+                    payload = _call_density_api(
+                        uploaded_file=uploaded_density,
+                        grid_size=int(grid_size),
+                        width=int(width),
+                        height=int(height),
+                        stroke_width=float(stroke_width),
+                        show_solution=bool(show_solution),
+                        density_factor=float(density_factor),
+                        max_side=int(max_side),
+                        edge_weight=float(edge_weight),
+                        edge_sigma=float(edge_sigma),
+                        edge_low_threshold=float(edge_low_threshold),
+                        edge_high_threshold=float(edge_high_threshold),
+                        contrast_boost=float(contrast_boost),
+                        use_texture=bool(use_texture),
+                        use_heuristic=bool(use_heuristic),
+                        bias_strength=float(bias_strength),
+                        preset=str(preset),
+                        n_segments=int(n_segments),
+                    )
+
+                maze_id = payload.get("maze_id", "density-maze")
+                png_b64 = payload.get("maze_png_base64", "")
+                svg_str = payload.get("maze_svg", "")
+                solution_path = payload.get("solution_path", [])
+                grid_rows = payload.get("grid_rows", 0)
+                grid_cols = payload.get("grid_cols", 0)
+                entrance = payload.get("entrance", {})
+                exit_info = payload.get("exit", {})
+
+                if not png_b64:
+                    st.error("PNG データがレスポンスに含まれていません。")
+                    return
+
+                png_bytes = base64.b64decode(png_b64)
+
+                st.subheader("生成結果")
+                st.caption(f"Maze ID: {maze_id} / グリッド: {grid_rows}×{grid_cols}")
+                st.image(png_bytes, use_column_width=True)
+
+                col_d1, col_d2 = st.columns(2)
+                with col_d1:
+                    st.metric("解経路の長さ（セル数）", len(solution_path))
+                    if entrance:
+                        st.write(f"入口: 行 {entrance.get('row')}, 列 {entrance.get('col')}")
+                with col_d2:
+                    st.metric("グリッドセル総数", grid_rows * grid_cols if grid_rows and grid_cols else 0)
+                    if exit_info:
+                        st.write(f"出口: 行 {exit_info.get('row')}, 列 {exit_info.get('col')}")
+
+                if svg_str:
+                    st.download_button(
+                        label="SVG をダウンロード",
+                        data=svg_str.encode("utf-8"),
+                        file_name=f"{maze_id}.svg",
+                        mime="image/svg+xml",
+                    )
+                st.download_button(
+                    label="PNG をダウンロード",
+                    data=png_bytes,
+                    file_name=f"{maze_id}.png",
+                    mime="image/png",
+                )
+
+            except requests.RequestException as exc:
+                st.error(f"API 呼び出し中にエラーが発生しました: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"予期しないエラーが発生しました: {exc}")
+
+
+def main() -> None:
+    st.title("AI 迷路ジェネレーター")
+
+    tab1, tab2 = st.tabs(["一筆書き迷路（V1）", "密度迷路（Phase 2）"])
+
+    with tab2:
+        _density_maze_tab()
+
+    with tab1:
+        st.write(
+            "画像から線画を抽出し、一筆書き→迷路→ダミー枝追加という 4 段階で確認できるビューです。"
+        )
+
+    st.sidebar.header("出力オプション（一筆書き迷路）")
 
     st.sidebar.markdown("#### 解像度（T-7）")
     width = st.sidebar.number_input(
