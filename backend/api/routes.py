@@ -158,6 +158,10 @@ async def generate_density_maze(
     extra_removal_rate: float | None = Form(0.0),
     dark_threshold: float | None = Form(0.3),
     light_threshold: float | None = Form(0.7),
+    # Masterpiece 3本柱
+    thickness_range: float | None = Form(1.5),
+    use_image_guided: bool | None = Form(False),
+    solution_highlight: bool | None = Form(False),
 ):
     """密度迷路 Phase 1/2: 濃度マップ→グリッド→Kruskal→解経路。Phase2パラメータ対応。"""
     raw_bytes = await file.read()
@@ -186,6 +190,9 @@ async def generate_density_maze(
     err = max(0.0, min(1.0, float(extra_removal_rate))) if extra_removal_rate is not None else 0.0
     dt = max(0.0, min(1.0, float(dark_threshold))) if dark_threshold is not None else 0.3
     lt = max(0.0, min(1.0, float(light_threshold))) if light_threshold is not None else 0.7
+    tr = max(0.0, min(3.0, float(thickness_range))) if thickness_range is not None else 1.5
+    ig = bool(use_image_guided) if use_image_guided is not None else False
+    sh = bool(solution_highlight) if solution_highlight is not None else False
 
     result = generate_density_maze_core(
         image,
@@ -209,6 +216,9 @@ async def generate_density_maze(
         extra_removal_rate=err,
         dark_threshold=dt,
         light_threshold=lt,
+        thickness_range=tr,
+        use_image_guided=ig,
+        solution_highlight=sh,
     )
 
     r, c = result.grid_rows, result.grid_cols

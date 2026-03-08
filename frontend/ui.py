@@ -128,6 +128,9 @@ def _call_density_api(
     extra_removal_rate: float = 0.0,
     dark_threshold: float = 0.3,
     light_threshold: float = 0.7,
+    thickness_range: float = 1.5,
+    use_image_guided: bool = False,
+    solution_highlight: bool = False,
 ) -> dict:
     files = {
         "file": (
@@ -157,6 +160,9 @@ def _call_density_api(
         "extra_removal_rate": f"{float(extra_removal_rate):.2f}",
         "dark_threshold": f"{float(dark_threshold):.2f}",
         "light_threshold": f"{float(light_threshold):.2f}",
+        "thickness_range": f"{float(thickness_range):.2f}",
+        "use_image_guided": "true" if use_image_guided else "false",
+        "solution_highlight": "true" if solution_highlight else "false",
     }
     response = requests.post(DENSITY_API_URL, files=files, data=data, timeout=120)
     response.raise_for_status()
@@ -174,6 +180,27 @@ def _density_maze_tab() -> None:
     col_l, col_r = st.columns([1, 2])
 
     with col_l:
+        st.markdown("### Masterpiece モード")
+
+        masterpiece_mode = st.checkbox(
+            "Masterpiece モードを有効にする（3本柱一括）",
+            value=False,
+            help=(
+                "可変壁厚(柱1) / ループ密度(柱2) / 画像適応ルーティング(柱3) を"
+                "推奨値で一括有効化する。個別スライダーは固定される。"
+            ),
+        )
+
+        if masterpiece_mode:
+            st.info(
+                "Masterpiece プリセット適用中:\n"
+                "- 可変壁厚 (thickness_range) = **1.5**\n"
+                "- 暗部ループ率 (extra_removal_rate) = **0.5**\n"
+                "- エッジ強調 (edge_weight) = **0.5**\n"
+                "- 画像適応ルーティング = **ON**\n"
+                "- 解経路ハイライト = **OFF**（白線）"
+            )
+
         st.markdown("### 基本パラメータ")
 
         grid_size = st.slider(
@@ -211,8 +238,9 @@ def _density_maze_tab() -> None:
             "エッジ強調（Canny）",
             min_value=0.0,
             max_value=1.0,
-            value=0.0,
+            value=0.5 if masterpiece_mode else 0.0,
             step=0.05,
+            disabled=masterpiece_mode,
             help=(
                 "Cannyエッジ検出で元画像の輪郭部分の壁を保持する強度。"
                 "0.0=なし（Phase1相当）、1.0=最大（輪郭が白い線として残る）。"
@@ -292,14 +320,37 @@ def _density_maze_tab() -> None:
             help="視覚的に美しい解経路（輝度変化が大きい経路）を選択するヒューリスティクス。",
         )
 
-        st.markdown("### Phase 2b: 密度制御（ループ許容）")
+        st.markdown("### 解経路設定（柱3）")
+
+        use_image_guided = st.checkbox(
+            "画像適応ルーティング（Dijkstra）",
+            value=True if masterpiece_mode else False,
+            disabled=masterpiece_mode,
+            help=(
+                "Dijkstra で明るい部分を優先的に通る解経路を求める（Masterpiece 柱3）。"
+                "ONのとき use_heuristic は無効になる。"
+            ),
+        )
+
+        solution_highlight = st.checkbox(
+            "解経路ハイライト（デバッグ用）",
+            value=False,
+            disabled=masterpiece_mode,
+            help=(
+                "OFF=解経路を白線で描画（masterpiece本番モード）。"
+                "ON=オレンジ+マーカーで強調（デバッグ確認用）。"
+            ),
+        )
+
+        st.markdown("### Phase 2b: 密度制御（ループ許容・柱2）")
 
         extra_removal_rate = st.slider(
             "追加壁除去率（暗部ループ）",
             min_value=0.0,
             max_value=1.0,
-            value=0.0,
+            value=0.5 if masterpiece_mode else 0.0,
             step=0.05,
+            disabled=masterpiece_mode,
             help=(
                 "暗いセルで追加の壁を除去しループを作る強度。"
                 "0.0=完全なspanning tree（デフォルト）、1.0=最大ループ。"
@@ -315,6 +366,7 @@ def _density_maze_tab() -> None:
                     max_value=1.0,
                     value=0.3,
                     step=0.05,
+                    disabled=masterpiece_mode,
                     help="この輝度未満のセルを「暗部」として追加壁除去の対象にする。",
                 )
                 light_threshold = st.slider(
@@ -323,11 +375,28 @@ def _density_maze_tab() -> None:
                     max_value=1.0,
                     value=0.7,
                     step=0.05,
+                    disabled=masterpiece_mode,
                     help="この輝度超のセルを「明部」として通路削除の対象にする（連結性を保護）。",
                 )
         else:
             dark_threshold = 0.3
             light_threshold = 0.7
+
+        st.markdown("### 柱1: 可変壁厚")
+
+        thickness_range = st.slider(
+            "壁厚範囲 (thickness_range)",
+            min_value=0.0,
+            max_value=3.0,
+            value=1.5,
+            step=0.1,
+            disabled=masterpiece_mode,
+            help=(
+                "輝度に応じて壁の太さを変化させる範囲。"
+                "0.0=均一壁厚、1.5=標準（明部ほど壁が細い）、3.0=最大コントラスト。"
+                "Masterpiece 柱1の設定。"
+            ),
+        )
 
         st.markdown("### 出力設定")
 
@@ -386,6 +455,9 @@ def _density_maze_tab() -> None:
                         extra_removal_rate=float(extra_removal_rate),
                         dark_threshold=float(dark_threshold),
                         light_threshold=float(light_threshold),
+                        thickness_range=float(thickness_range),
+                        use_image_guided=bool(use_image_guided),
+                        solution_highlight=bool(solution_highlight),
                     )
 
                 maze_id = payload.get("maze_id", "density-maze")
