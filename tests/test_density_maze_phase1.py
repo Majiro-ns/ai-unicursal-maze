@@ -305,9 +305,9 @@ def test_svg_solution_corridor_style():
 
 
 def test_svg_solution_entrance_exit_markers():
-    """Phase 2 SVG に入口・出口マーカー（circle）が含まれる。"""
+    """Phase 2 SVG に入口・出口マーカー（circle）が含まれる（solution_highlight=True モード）。"""
     img = _make_small_image(48, 48)
-    result = generate_density_maze(img, grid_size=4, max_side=48, show_solution=True)
+    result = generate_density_maze(img, grid_size=4, max_side=48, show_solution=True, solution_highlight=True)
     assert "circle" in result.svg.lower()
 
 

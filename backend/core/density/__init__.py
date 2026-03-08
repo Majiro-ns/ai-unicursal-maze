@@ -18,7 +18,7 @@ from PIL import Image
 from .entrance_exit import find_entrance_exit_and_path, find_entrance_exit_heuristic
 from .exporter import maze_to_png, maze_to_svg
 from .grid_builder import build_cell_grid, build_cell_grid_with_edges, build_cell_grid_with_texture, CellGrid
-from .maze_builder import build_spanning_tree
+from .maze_builder import build_spanning_tree, post_process_density
 from .preprocess import preprocess_image
 
 
@@ -61,6 +61,10 @@ def generate_density_maze(
     edge_high_threshold: float = 0.20,
     # Phase 2 CLAHEコントラスト補正
     contrast_boost: float = 1.0,
+    # Phase 2 可変壁厚（masterpiece柱1）
+    thickness_range: float = 1.5,
+    # 解経路描画モード: False=masterpiece白線 / True=デバッグ用オレンジ+マーカー
+    solution_highlight: bool = False,
 ) -> DensityMazeResult:
     """
     密度迷路パイプライン（Phase 1/2 共用）。
@@ -141,12 +145,16 @@ def generate_density_maze(
         width=width, height=height,
         stroke_width=stroke_width,
         show_solution=show_solution,
+        thickness_range=thickness_range,
+        solution_highlight=solution_highlight,
     )
     png_bytes = maze_to_png(
         grid, adj, entrance, exit_cell, solution_path,
         width=width, height=height,
         stroke_width=int(max(1, stroke_width)),
         show_solution=show_solution,
+        thickness_range=thickness_range,
+        solution_highlight=solution_highlight,
     )
 
     return DensityMazeResult(
