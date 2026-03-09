@@ -155,9 +155,9 @@ def test_segment_single_region_shape():
 
 def test_segment_multi_region_n_labels():
     """segment_by_luminance は n_clusters 種類のラベルを返す。"""
-    img = _make_checkerboard(64, 64)
+    img = _make_checkerboard(32, 32)
     from backend.core.density.preprocess import preprocess_image
-    gray = preprocess_image(img, max_side=64)
+    gray = preprocess_image(img, max_side=32)
     labels = segment_by_luminance(gray, n_clusters=4)
     assert labels.shape == gray.shape
     unique_labels = np.unique(labels)
@@ -193,9 +193,9 @@ def test_segment_n_clusters_1():
 
 def test_texture_assign_cells_shape():
     """assign_cell_textures の出力形状が grid と一致する。"""
-    img = _make_checkerboard(64, 64)
+    img = _make_checkerboard(32, 32)
     from backend.core.density.preprocess import preprocess_image
-    gray = preprocess_image(img, max_side=64)
+    gray = preprocess_image(img, max_side=32)
     label_map = segment_by_luminance(gray, n_clusters=4)
     dummy_grid = CellGrid(rows=8, cols=8, luminance=np.zeros((8, 8)), walls=[])
     tex = assign_cell_textures(dummy_grid, label_map, PRESET_FACE)
