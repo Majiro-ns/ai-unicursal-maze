@@ -243,7 +243,7 @@ def generate_i4_maze(
         cell_size_px=cell_size_px,
         walls=walls,
         solution_path=solution_path,
-        density_map=grid.luminance,
+        density_map=1.0 - grid.luminance.astype(np.float64),
         entrance=entrance_rc,
         exit_pos=exit_rc,
     )

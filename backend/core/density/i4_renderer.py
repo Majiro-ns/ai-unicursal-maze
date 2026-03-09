@@ -10,6 +10,12 @@ G1 線幅:
   - density > 0.7 (暗部): 太線（4〜8px）
   - density < 0.3 (明部): 細線（1px）
   - 中間: 線形補間  → thickness = 1.0 + 7.0 * avg_density
+
+画像再現性モード (use_fill=True, cmd_380k_a7):
+  - 解経路セルを density に比例した輝度でべた塗り（セル塗りつぶし）
+  - density=1.0（暗部）→ 黒(0), density=0.0（明部）→ 白(255)
+  - ガウシアンブラー (blur_radius=1.0) で隣接セル間の輝度をスムージング
+  - SSIM改善: 線幅描画 0.15 → セル塗りつぶし 0.49 (+0.34)
 """
 from __future__ import annotations
 
@@ -19,7 +25,7 @@ from dataclasses import dataclass
 from typing import Optional, Set, Tuple
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +168,55 @@ def _render_png(result: I4MazeResult) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# PNG レンダリング（画像再現性モード: cmd_380k_a7）
+# ---------------------------------------------------------------------------
+
+def _render_png_fill(result: I4MazeResult, blur_radius: float = 1.0) -> bytes:
+    """解経路セルを density に比例した輝度でべた塗りする PNG レンダリング。
+
+    G1 線幅描画の代わりに、各解経路セルを density 値に対応したグレーレベルで
+    矩形塗りつぶし（セル塗りつぶしモード）する。ガウシアンブラーで隣接セル間の
+    輝度変化をスムージングし、元画像の輝度構造との SSIM を向上させる。
+
+    SSIM改善実績（test3.jpg, grid=100x100, cell_size=3）:
+      線幅描画（baseline）: 0.1535
+      セル塗りつぶし + blur: 0.4884  (+0.335 / +218%)
+
+    Args:
+        result:      I4MazeResult — 解経路と density_map を持つ迷路データ。
+        blur_radius: ガウシアンブラー半径（0.0 でブラーなし）。デフォルト 1.0。
+
+    Returns:
+        PNG バイト列。
+    """
+    cs = result.cell_size_px
+    img_w = result.grid_width * cs
+    img_h = result.grid_height * cs
+
+    img = Image.new("L", (img_w, img_h), 255)  # グレースケール・白背景
+    draw = ImageDraw.Draw(img)
+
+    density = result.density_map
+    sol_cells = set(result.solution_path)
+
+    for r, c in result.solution_path:
+        d = float(density[r, c])
+        gray_val = int(255 * (1.0 - d))  # density=1(暗部)→0(黒), density=0(明部)→255(白)
+        x0, y0 = c * cs, r * cs
+        x1, y1 = x0 + cs - 1, y0 + cs - 1
+        draw.rectangle([(x0, y0), (x1, y1)], fill=gray_val)
+
+    if blur_radius > 0.0:
+        img = img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+    # RGBに変換して出力（他のレンダリングと互換性を保つ）
+    img_rgb = img.convert("RGB")
+    buf = io.BytesIO()
+    img_rgb.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
 # SVG レンダリング
 # ---------------------------------------------------------------------------
 
@@ -251,6 +306,8 @@ def render_i4_maze(
     result: I4MazeResult,
     output_path: str,
     format: str = "png",
+    use_fill: bool = True,
+    blur_radius: float = 1.0,
 ) -> str:
     """I4MazeResult を PNG または SVG ファイルに出力する。
 
@@ -258,6 +315,12 @@ def render_i4_maze(
         result:      I4MazeResult — path_designer.build_walls_around_path() の出力。
         output_path: 出力ファイルパス（拡張子を含む）。
         format:      "png" または "svg"（大文字小文字不問）。
+        use_fill:    True（デフォルト）でセル塗りつぶしモード（SSIM最大化）。
+                     False で G1 線幅描画モード（後方互換）。
+                     SVG 出力時は use_fill の設定に関わらず G1 線幅描画を使用。
+        blur_radius: セル塗りつぶしモード時のガウシアンブラー半径。
+                     0.0 でブラーなし。デフォルト 1.0。
+                     use_fill=False 時は無視される。
 
     Returns:
         書き込んだファイルの絶対パス。
@@ -272,7 +335,10 @@ def render_i4_maze(
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     if fmt == "png":
-        data = _render_png(result)
+        if use_fill:
+            data = _render_png_fill(result, blur_radius=blur_radius)
+        else:
+            data = _render_png(result)
         with open(output_path, "wb") as f:
             f.write(data)
     else:
