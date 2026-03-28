@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 import numpy as np
 from PIL import Image
 
+from .dm5 import DM5Config, DM5Result, generate_dm5_maze, PRINT_FORMATS
 from .entrance_exit import find_entrance_exit_and_path, find_entrance_exit_heuristic, find_image_guided_path
 from .exporter import maze_to_png, maze_to_svg
 from .grid_builder import build_cell_grid, build_cell_grid_with_edges, build_cell_grid_with_texture, CellGrid
@@ -23,9 +24,10 @@ from .preprocess import preprocess_image
 
 
 # masterpiece 黄金設定（SSIM探索 cmd_358k_a2 結果: grid_size=8 が SSIM と視認性のバランス点）
+# P3 (cmd_368k_a8_p3): thickness_range 1.5 → 2.5 に拡張（G1 線幅最適化）
 MASTERPIECE_PRESET: dict = {
     "grid_size": 8,
-    "thickness_range": 1.5,
+    "thickness_range": 2.5,
     "extra_removal_rate": 0.5,
     "dark_threshold": 0.3,
     "light_threshold": 0.7,

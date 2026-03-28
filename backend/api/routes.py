@@ -11,6 +11,7 @@ from ..core.models import MazeOptions
 from ..core.maze_generator import generate_unicursal_maze
 from ..core.staged_generator import generate_staged_maze
 from ..core.density import generate_density_maze as generate_density_maze_core, MASTERPIECE_PRESET
+from ..core.density import generate_dm5_maze, DM5Config
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -251,3 +252,61 @@ async def generate_density_maze(
         "grid_rows": r,
         "grid_cols": c,
     }
+
+
+@router.post("/dm5/generate")
+async def generate_dm5(
+    file: UploadFile = File(...),
+    print_format: str | None = Form("A4"),
+    viewing_distance: str | None = Form("desk"),
+    output_format: str | None = Form("png"),
+    dpi: int | None = Form(300),
+):
+    """DM-5 印刷最適化迷路: A4/A3 @ 300DPI, viewing_distance 別壁厚, CMYK/PDF 対応。"""
+    raw_bytes = await file.read()
+    if len(raw_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+    try:
+        image = Image.open(io.BytesIO(raw_bytes))
+        image.load()
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Unsupported or invalid image file.")
+
+    valid_formats = {"A4", "A3"}
+    valid_distances = {"desk", "poster", "large"}
+    valid_outputs = {"png", "cmyk_png", "pdf"}
+
+    pf = print_format if print_format in valid_formats else "A4"
+    vd = viewing_distance if viewing_distance in valid_distances else "desk"
+    of = output_format if output_format in valid_outputs else "png"
+    d = max(72, min(600, int(dpi))) if dpi is not None else 300
+
+    config = DM5Config(
+        print_format=pf,
+        viewing_distance=vd,
+        output_format=of,
+        dpi=d,
+    )
+
+    result = generate_dm5_maze(image, config)
+
+    response: dict = {
+        "print_format": result.print_format,
+        "viewing_distance": result.viewing_distance,
+        "dpi": result.dpi,
+        "wall_thickness_px": result.wall_thickness_px,
+        "grid_rows": result.grid_rows,
+        "grid_cols": result.grid_cols,
+        "ssim_score": result.ssim_score,
+        "solution_path_length": len(result.solution_path),
+        "maze_svg": result.svg,
+    }
+
+    if of == "pdf" and result.pdf_bytes is not None:
+        response["pdf_base64"] = base64.b64encode(result.pdf_bytes).decode("utf-8")
+    elif of == "cmyk_png" and result.cmyk_png_bytes is not None:
+        response["cmyk_png_base64"] = base64.b64encode(result.cmyk_png_bytes).decode("utf-8")
+    else:
+        response["png_base64"] = base64.b64encode(result.png_bytes).decode("utf-8")
+
+    return response
