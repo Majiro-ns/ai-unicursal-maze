@@ -12,6 +12,7 @@ from ..core.maze_generator import generate_unicursal_maze
 from ..core.staged_generator import generate_staged_maze
 from ..core.density import generate_density_maze as generate_density_maze_core, MASTERPIECE_PRESET
 from ..core.density import generate_dm5_maze, DM5Config
+from ..core.density import generate_dm6_maze, DM6Config, optimize_for_image, VALID_CATEGORIES, VALID_DIFFICULTIES
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -310,3 +311,75 @@ async def generate_dm5(
         response["png_base64"] = base64.b64encode(result.png_bytes).decode("utf-8")
 
     return response
+
+
+@router.post("/dm6/generate")
+async def generate_dm6(
+    file: UploadFile = File(...),
+    difficulty: str | None = Form("medium"),
+    difficulty_score: float | None = Form(None),
+    preset_name: str | None = Form(None),
+):
+    """DM-6 難易度制御迷路: easy/medium/hard/extreme, difficulty_score 対応。"""
+    raw_bytes = await file.read()
+    if len(raw_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+    try:
+        image = Image.open(io.BytesIO(raw_bytes))
+        image.load()
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Unsupported or invalid image file.")
+
+    diff = difficulty if difficulty in VALID_DIFFICULTIES else "medium"
+    pn = preset_name if preset_name in (VALID_CATEGORIES | {None}) else None
+
+    config = DM6Config(
+        difficulty=diff,
+        difficulty_score=difficulty_score,
+        preset_name=pn,
+    )
+
+    try:
+        result = generate_dm6_maze(image, config)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "difficulty": result.difficulty,
+        "difficulty_score": result.difficulty_score,
+        "extra_removal_rate": result.extra_removal_rate,
+        "preset_name": result.preset_name,
+        "grid_rows": result.grid_rows,
+        "grid_cols": result.grid_cols,
+        "ssim_score": result.ssim_score,
+        "solution_path_length": len(result.solution_path),
+        "maze_svg": result.svg,
+        "png_base64": base64.b64encode(result.png_bytes).decode("utf-8"),
+    }
+
+
+@router.post("/dm6/optimize")
+async def optimize_dm6(
+    file: UploadFile = File(...),
+    category: str | None = Form("portrait"),
+    n_trials: int | None = Form(20),
+):
+    """DM-6 Bayesian最適化: optuna TPE で SSIM 最大化パラメータを探索。"""
+    raw_bytes = await file.read()
+    if len(raw_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+    try:
+        image = Image.open(io.BytesIO(raw_bytes))
+        image.load()
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Unsupported or invalid image file.")
+
+    cat = category if category in VALID_CATEGORIES else "portrait"
+    trials = max(5, min(200, int(n_trials))) if n_trials is not None else 20
+
+    try:
+        result = optimize_for_image(image, n_trials=trials, category=cat, seed=42)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Optimization failed: {e}")
+
+    return result

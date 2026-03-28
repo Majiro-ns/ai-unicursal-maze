@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "maze-artisan"
+version = "0.6.0"
+description = "AI-powered unicursal maze generator with density-aware rendering and Bayesian optimization"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "maze-artisan contributors" }
+]
+keywords = ["maze", "generative-art", "optuna", "bayesian-optimization", "ssim"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Artistic Software",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+    "Pillow>=10.0",
+    "numpy>=1.24",
+    "scikit-image>=0.21",
+    "typer>=0.9",
+    "optuna>=3.0",
+    "reportlab>=4.0",
+    "opencv-python-headless>=4.8",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+maze-artisan = "backend.cli:main"
+
+[project.urls]
+Repository = "https://github.com/maze-artisan/ai-unicursal-maze"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"

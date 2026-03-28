@@ -11,6 +11,83 @@
 
 ---
 
+## Installation (maze-artisan CLI)
+
+```bash
+pip install maze-artisan
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/maze-artisan/ai-unicursal-maze
+cd ai-unicursal-maze
+pip install -e ".[dev]"
+```
+
+## Quick Start
+
+```python
+from PIL import Image
+from backend.core.density.dm6 import generate_dm6_maze, DM6Config
+
+image = Image.open("photo.jpg")
+
+# Generate a hard maze
+result = generate_dm6_maze(image, DM6Config(difficulty="hard"))
+with open("maze.png", "wb") as f:
+    f.write(result.png_bytes)
+print(f"SSIM: {result.ssim_score:.4f}, Grid: {result.grid_rows}×{result.grid_cols}")
+```
+
+## CLI Usage
+
+### optimize — Bayesian parameter search
+
+```bash
+# Search optimal parameters for a portrait photo (100 trials)
+maze-artisan optimize --image photo.jpg --trials 100 --category portrait --output preset.json
+
+# Dry-run: validate inputs only
+maze-artisan optimize --image photo.jpg --category logo --dry-run
+```
+
+### generate — Difficulty-controlled maze
+
+```bash
+# Generate a hard maze
+maze-artisan generate --image photo.jpg --difficulty hard --output maze.png
+
+# Generate using difficulty score (0.0=easy … 1.0=extreme)
+maze-artisan generate --image photo.jpg --difficulty-score 0.8
+
+# Generate with category preset
+maze-artisan generate --image photo.jpg --preset portrait --difficulty medium
+
+# Dry-run: validate without generating
+maze-artisan generate --image photo.jpg --difficulty extreme --dry-run
+```
+
+### Difficulty levels
+
+| Level   | Grid size | Extra removal rate | Notes           |
+|---------|-----------|-------------------|-----------------|
+| easy    | 6×6       | 40%               | Many loops      |
+| medium  | 10×10     | 15%               | Balanced        |
+| hard    | 14×14     | 5%                | Few loops       |
+| extreme | 16×16     | 0%                | Pure spanning tree |
+
+### Category presets (for optimize)
+
+| Category  | Focus                         |
+|-----------|-------------------------------|
+| portrait  | High tonal levels, fine grid  |
+| landscape | Medium grid, broad structure  |
+| logo      | High contrast, low tonal      |
+| anime     | Edge emphasis, outline        |
+
+---
+
 ## maze-artisan との対応
 
 本リポジトリは **maze-artisan** の実装リポジトリです。

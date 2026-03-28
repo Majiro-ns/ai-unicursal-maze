@@ -16,6 +16,8 @@ import numpy as np
 from PIL import Image
 
 from .dm5 import DM5Config, DM5Result, generate_dm5_maze, PRINT_FORMATS
+from .dm6 import DM6Config, DM6Result, generate_dm6_maze, DIFFICULTY_PARAMS, VALID_DIFFICULTIES
+from .dm6_optimizer import optimize_for_image, generate_preset, load_preset, save_preset, CATEGORY_CONSTRAINTS, VALID_CATEGORIES
 from .entrance_exit import find_entrance_exit_and_path, find_entrance_exit_heuristic, find_image_guided_path
 from .exporter import maze_to_png, maze_to_svg
 from .grid_builder import build_cell_grid, build_cell_grid_with_edges, build_cell_grid_with_texture, CellGrid
