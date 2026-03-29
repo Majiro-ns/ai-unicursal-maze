@@ -466,3 +466,57 @@ class TestCLIDryRun:
             assert result.exit_code != 0
         finally:
             os.unlink(img_path)
+
+    def test_generate_preset_masterpiece_dry_run(self):
+        """--preset masterpiece --dry-run がエラーなく終了する。"""
+        from typer.testing import CliRunner
+        from backend.cli import app
+
+        runner = CliRunner()
+        img_path = self._make_temp_image()
+        try:
+            result = runner.invoke(app, [
+                "generate", "--image", img_path,
+                "--preset", "masterpiece", "--dry-run"
+            ])
+            assert result.exit_code == 0, result.output
+            assert "dry-run" in result.output.lower()
+        finally:
+            os.unlink(img_path)
+
+    def test_generate_preset_masterpiece_generates_png(self, tmp_path):
+        """--preset masterpiece で PNG が生成されること。"""
+        from typer.testing import CliRunner
+        from backend.cli import app
+
+        runner = CliRunner()
+        img_path = self._make_temp_image()
+        out_path = str(tmp_path / "out_masterpiece.png")
+        try:
+            result = runner.invoke(app, [
+                "generate", "--image", img_path,
+                "--preset", "masterpiece",
+                "--output", out_path,
+            ])
+            assert result.exit_code == 0, result.output
+            assert Path(out_path).exists(), "出力 PNG が生成されなかった"
+            assert Path(out_path).stat().st_size > 0, "出力 PNG が空"
+            assert "masterpiece" in result.output.lower()
+        finally:
+            os.unlink(img_path)
+
+    def test_generate_invalid_preset_exits_nonzero(self):
+        """generate に無効な preset を渡すと exit_code != 0。"""
+        from typer.testing import CliRunner
+        from backend.cli import app
+
+        runner = CliRunner()
+        img_path = self._make_temp_image()
+        try:
+            result = runner.invoke(app, [
+                "generate", "--image", img_path,
+                "--preset", "invalid_preset", "--dry-run"
+            ])
+            assert result.exit_code != 0
+        finally:
+            os.unlink(img_path)

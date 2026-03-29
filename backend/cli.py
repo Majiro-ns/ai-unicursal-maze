@@ -106,7 +106,7 @@ def cmd_generate(
     preset: Optional[str] = typer.Option(
         None,
         "--preset", "-p",
-        help="Category preset name: portrait / landscape / logo / anime.",
+        help="Category preset name: portrait / landscape / logo / anime / masterpiece.",
     ),
     output: Optional[Path] = typer.Option(
         None,
@@ -117,9 +117,12 @@ def cmd_generate(
 ):
     """
     DM-6 難易度制御迷路を生成し PNG として保存する。
+    --preset masterpiece を指定すると MASTERPIECE_PRESET を使用する。
     """
     from .core.density.dm6 import generate_dm6_maze, DM6Config, VALID_DIFFICULTIES
     from .core.density.dm6_optimizer import VALID_CATEGORIES
+
+    _VALID_PRESETS = VALID_CATEGORIES | {"masterpiece"}
 
     if difficulty not in VALID_DIFFICULTIES:
         typer.echo(
@@ -129,10 +132,10 @@ def cmd_generate(
         )
         raise typer.Exit(code=1)
 
-    if preset is not None and preset not in VALID_CATEGORIES:
+    if preset is not None and preset not in _VALID_PRESETS:
         typer.echo(
             f"ERROR: Invalid preset '{preset}'. "
-            f"Choose from: {sorted(VALID_CATEGORIES)}",
+            f"Choose from: {sorted(_VALID_PRESETS)}",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -146,6 +149,17 @@ def cmd_generate(
 
     if dry_run:
         typer.echo("[dry-run] Validation passed. Skipping generation.")
+        return
+
+    # --preset masterpiece: MASTERPIECE_PRESET を使って generate_density_maze を呼ぶ
+    if preset == "masterpiece":
+        from .core.density import generate_density_maze, MASTERPIECE_PRESET
+        typer.echo("Generating masterpiece maze...")
+        dm_result = generate_density_maze(img, **MASTERPIECE_PRESET)
+        out_path = output or Path(f"{image.stem}_masterpiece.png")
+        out_path.write_bytes(dm_result.png_bytes)
+        typer.echo(f"Saved: {out_path}")
+        typer.echo(f"Grid: {dm_result.grid_rows}×{dm_result.grid_cols} [masterpiece]")
         return
 
     config = DM6Config(
