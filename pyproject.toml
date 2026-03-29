@@ -8,7 +8,7 @@ version = "0.6.0"
 description = "Unicursal maze generator where solving the maze reveals the source image — Hamiltonian path + SSIM optimization"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [
     { name = "maze-artisan contributors" }
 ]

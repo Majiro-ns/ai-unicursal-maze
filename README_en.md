@@ -48,15 +48,19 @@ print(f"SSIM: {result.ssim_score:.4f}")  # expect 0.60–0.65
 
 ## Gallery
 
-| Category | Description | Expected SSIM |
-|---|---|---|
-| Portrait | Face / hair detail preserved | 0.58–0.65 |
-| Landscape | Horizon lines, sky gradients | 0.55–0.62 |
-| Logo | High-contrast edges, clean lines | 0.62–0.70 |
-| Anime | Outline emphasis, flat fill | 0.60–0.68 |
-| Gradient | Smooth tone transitions | 0.60–0.65 |
+SSIM benchmark results — `passage_ratio=0.10`, `grid_size=8`, `cell_size_px=20` (DM-7 masterpiece preset):
 
-> Gallery images coming soon. Run `maze-artisan optimize --image your_photo.jpg` to generate your own.
+| Category  | Description                        | Measured SSIM | Rating   |
+|-----------|------------------------------------|---------------|----------|
+| Logo      | High-contrast edges, clean lines   | **0.5781**    | good ✅  |
+| Anime     | Outline emphasis, flat fill        | **0.5389**    | good ✅  |
+| Portrait  | Face / hair detail preserved       | **0.5375**    | good ✅  |
+| Landscape | Horizon lines, sky gradients       | **0.4930**    | fair ✅  |
+| Photo     | Real photograph (complex tones)    | 0.0689        | —        |
+
+> **Note:** SSIM measures structural similarity between the solved path and the source image.
+> A higher score means the maze path more faithfully reconstructs the original image.
+> Run `maze-artisan optimize --image your_photo.jpg` to generate your own.
 
 ---
 

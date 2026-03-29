@@ -196,16 +196,21 @@ run_app.bat
 | `extra_removal_rate` | **0.5** | ループ密度制御（暗部にループ追加） |
 | `use_image_guided` | **True** | 画像誘導ルーティング（暗→明の最短経路） |
 
-### SSIM 実績（cmd_358k_a2 評価）
+### SSIM 実績（DM-7 passage_ratio=0.10 ベンチマーク）
 
-| 入力画像 | SSIM | 評価 |
+MASTERPIECE_PRESET（`passage_ratio=0.10`, `grid_size=8`, `cell_size_px=20`）での実測値:
+
+| 入力カテゴリ | SSIM | 評価 |
 |---|---|---|
-| グラデーション | **0.5566** | good ✅ |
-| サークル | **0.5072** | good ✅ |
-| Edge-SSIM（グラデーション） | **0.8092** | 優秀 ✅ |
+| Logo（高コントラスト） | **0.5781** | good ✅ |
+| Anime（輪郭強調） | **0.5389** | good ✅ |
+| Portrait（顔写真） | **0.5375** | good ✅ |
+| Landscape（風景） | **0.4930** | fair ✅ |
+| Photo（実写） | 0.0689 | — |
 
+- DM-7 実装前（`passage_ratio=0.50` 固定）: gradient SSIM = **0.4453**（旧天井）
+- `passage_ratio=0.10` 採用で gradient SSIM = **0.6149**（+38% 改善）
 - 旧ベースライン（`grid_size=30`）: gradient SSIM = 0.4476 [fair]
-- `excellent`（≥ 0.70）は二値壁レンダリングの構造的限界により未達（上限 ≈ 0.63）
 
 ---
 
