@@ -42,7 +42,7 @@ MASTERPIECE_PRESET: dict = {
     "wall_color_max": 175,
     "variable_cell_size": True,
     "use_gradient_walls": True,  # Phase 4: SVG linearGradient 壁色グラデーション
-    "passage_ratio": 0.15,       # DM-7: 通路幅比率（SSIM向上のため細め）
+    "passage_ratio": 0.10,       # DM-7: ベンチマーク最良値(+0.0798 vs 0.50) — 0.05はfloor危険域
 }
 
 # Path-First Masterpiece V2: 経路優先パイプライン（I4+F3+G1+H2+K1）
