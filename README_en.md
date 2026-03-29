@@ -3,7 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/maze-artisan.svg)](https://pypi.org/project/maze-artisan/)
 [![Python versions](https://img.shields.io/pypi/pyversions/maze-artisan.svg)](https://pypi.org/project/maze-artisan/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-![tests](https://img.shields.io/badge/tests-822%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-961%20passed-brightgreen)
 
 **A unicursal maze generator where solving reveals an image.**
 
@@ -14,6 +14,7 @@ Upload any photo → maze-artisan traces a single Hamiltonian path through your 
 ## Features
 
 - **Image-faithful unicursal mazes** — every maze has exactly one solution; the solved path reveals the source image via SSIM-optimized routing
+- **DM-8 multiscale density map** — pyramid L1/L2/L3 weighted density map captures both global luminance structure and local cell detail (new in v1.0.0)
 - **DM-7 passage_ratio control** — parametric passage width (default `0.5`, use `0.15` for photo-accurate results, SSIM 0.60–0.65)
 - **Bayesian parameter search** — Optuna-powered optimizer finds the best grid size, passage ratio, and tonal parameters for your image automatically
 - **4 difficulty levels** — easy (6×6) / medium (10×10) / hard (14×14) / extreme (16×16)
@@ -31,16 +32,26 @@ pip install maze-artisan
 
 ```python
 from PIL import Image
-from backend.core.density.dm7 import generate_dm7_maze, DM7Config
+from backend.core.density.dm8 import generate_dm8_maze, DM8Config
 
 image = Image.open("photo.jpg")
 
-# High-fidelity maze: passage_ratio=0.15 breaks the SSIM ceiling
-result = generate_dm7_maze(image, DM7Config(passage_ratio=0.15, difficulty="hard"))
+# DM-8: multiscale density map + passage_ratio control (v1.0.0 recommended)
+result = generate_dm8_maze(image, DM8Config(
+    passage_ratio=0.10,
+    difficulty="hard",
+    scale_weights=(0.2, 0.3, 0.5),  # L1/L2/L3 weights
+))
 
 with open("maze.png", "wb") as f:
     f.write(result.png_bytes)
 
+print(f"SSIM: {result.ssim_score:.4f}")
+print(f"Multiscale weights: {result.scale_weights_used}")
+
+# Or use DM-6 for simpler usage
+from backend.core.density.dm6 import generate_dm6_maze, DM6Config
+result = generate_dm6_maze(image, DM6Config(passage_ratio=0.10, difficulty="hard"))
 print(f"SSIM: {result.ssim_score:.4f}")  # expect 0.60–0.65
 ```
 

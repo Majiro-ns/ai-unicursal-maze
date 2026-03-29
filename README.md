@@ -3,7 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/maze-artisan.svg)](https://pypi.org/project/maze-artisan/)
 [![Python versions](https://img.shields.io/pypi/pyversions/maze-artisan.svg)](https://pypi.org/project/maze-artisan/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-![tests](https://img.shields.io/badge/tests-583%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-961%20passed-brightgreen)
 
 画像をアップロードして、一筆書き迷路風の SVG/PNG を生成するローカル Web アプリです。入力画像の輪郭・シルエットに沿った一筆パスから迷路を生成します。
 
@@ -30,11 +30,19 @@ pip install -e ".[dev]"
 
 ```python
 from PIL import Image
-from backend.core.density.dm6 import generate_dm6_maze, DM6Config
+from backend.core.density.dm8 import generate_dm8_maze, DM8Config
 
 image = Image.open("photo.jpg")
 
-# Generate a hard maze
+# Generate with DM-8 multiscale (recommended)
+result = generate_dm8_maze(image, DM8Config(difficulty="hard", passage_ratio=0.10))
+with open("maze.png", "wb") as f:
+    f.write(result.png_bytes)
+print(f"SSIM: {result.ssim_score:.4f}, Grid: {result.grid_rows}×{result.grid_cols}")
+print(f"Scale weights: {result.scale_weights_used}")
+
+# Or use DM-6 directly
+from backend.core.density.dm6 import generate_dm6_maze, DM6Config
 result = generate_dm6_maze(image, DM6Config(difficulty="hard"))
 with open("maze.png", "wb") as f:
     f.write(result.png_bytes)
@@ -211,6 +219,40 @@ run_app.bat
 - DM-7 実装前（`passage_ratio=0.50` 固定）: gradient SSIM = **0.4453**（旧天井）
 - `passage_ratio=0.10` 採用で gradient SSIM = **0.6149**（+38% 改善）
 - 旧ベースライン（`grid_size=30`）: gradient SSIM = 0.4476 [fair]
+
+---
+
+## DM-8: マルチスケール密度マップ（v1.0.0 新機能）
+
+DM-8 は L1/L2/L3 の 3 スケールを加重合成したピラミッド型密度マップを使用し、グローバル輝度構造とローカル細部の両方を迷路構造に反映します。
+
+```python
+from PIL import Image
+from backend.core.density.dm8 import generate_dm8_maze, DM8Config
+
+image = Image.open("photo.jpg")
+
+# デフォルト: scale_weights=(0.2, 0.3, 0.5), coarse_size=4, medium_size=8
+result = generate_dm8_maze(image, DM8Config(
+    difficulty="hard",
+    passage_ratio=0.10,          # 通路幅制御（0.10が最高SSIM）
+    scale_weights=(0.2, 0.3, 0.5),  # L1/L2/L3 の重み
+    coarse_size=4,               # L1 グリッドサイズ（4×4）
+    medium_size=8,               # L2 グリッドサイズ（8×8）
+))
+print(f"SSIM: {result.ssim_score:.4f}")
+print(f"Scale weights used: {result.scale_weights_used}")
+```
+
+### スケール構成
+
+| スケール | サイズ | デフォルト重み | 役割 |
+|---------|-------|--------------|------|
+| L1 (coarse) | 4×4 | 0.2 | グローバル輝度分布 |
+| L2 (medium) | 8×8 | 0.3 | 中間ディテール（輪郭・テキスト塊） |
+| L3 (fine)   | フル | 0.5 | 局所セル単位輝度 |
+
+> **ヒント**: `cell_size_px≥16` の大セル設定でマルチスケール効果が最大化されます。
 
 ---
 

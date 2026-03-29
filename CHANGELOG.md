@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.0] - 2026-03-29
+
+### Added
+- **DM-8: Multiscale density map** — pyramid-based density map combining L1 (coarse 4×4), L2 (medium 8×8), and L3 (full-resolution) scales with configurable weights `(0.2, 0.3, 0.5)`. Captures global luminance structure alongside local cell-level detail.
+- `DM8Config` dataclass with `coarse_size`, `medium_size`, `scale_weights` fields (inherits `DM6Config`).
+- `DM8Result` dataclass with `scale_weights_used`, `coarse_size_used`, `medium_size_used` fields.
+- `generate_dm8_maze()` function in `backend.core.density.dm8`.
+- `build_multiscale_density_map()` and `_upsample_density()` utility functions.
+- Test suite expanded to **961 tests** (87 DM-8 gridsearch + wall-color tests added in v0.6.x).
+
+### Changed
+- `pyproject.toml`: Development Status upgraded to `5 - Production/Stable`.
+- Test badge updated to reflect 961 passing tests.
+
+### Notes
+- DM-8 SSIM vs DM-7 (passage_ratio=0.10) benchmark: differences within ±0.002 (stochastic variability range) across 5 categories (logo/anime/portrait/landscape/photo). Multiscale effect is most pronounced at larger grid sizes (`cell_size_px≥16`).
+- One unique solution guaranteed: only the density map computation is changed; Kruskal MST, entrance/exit, and BFS remain identical to DM-4.
+
+---
+
 ## [0.6.0] - 2026-03-31
 
 ### Added
