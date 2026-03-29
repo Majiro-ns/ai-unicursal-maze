@@ -1,8 +1,9 @@
 # AI Unicursal Maze Generator
 
-![tests](https://img.shields.io/badge/tests-387%20passed-brightgreen)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![PyPI version](https://img.shields.io/pypi/v/maze-artisan.svg)](https://pypi.org/project/maze-artisan/)
+[![Python versions](https://img.shields.io/pypi/pyversions/maze-artisan.svg)](https://pypi.org/project/maze-artisan/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+![tests](https://img.shields.io/badge/tests-583%20passed-brightgreen)
 
 画像をアップロードして、一筆書き迷路風の SVG/PNG を生成するローカル Web アプリです。入力画像の輪郭・シルエットに沿った一筆パスから迷路を生成します。
 

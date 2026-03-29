@@ -1,11 +1,11 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "maze-artisan"
 version = "0.6.0"
-description = "AI-powered unicursal maze generator with density-aware rendering and Bayesian optimization"
+description = "Unicursal maze generator where solving the maze reveals the source image — Hamiltonian path + SSIM optimization"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -22,6 +22,10 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Topic :: Artistic Software",
     "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
 ]
 dependencies = [
     "Pillow>=10.0",
