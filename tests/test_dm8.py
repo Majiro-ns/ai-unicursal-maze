@@ -155,9 +155,9 @@ class TestDM8Config:
         assert config.medium_size == 8
 
     def test_default_scale_weights(self):
-        """デフォルト scale_weights は (0.2, 0.3, 0.5)。"""
+        """デフォルト scale_weights は (0.3, 0.3, 0.4)。"""
         config = DM8Config()
-        assert config.scale_weights == (0.2, 0.3, 0.5)
+        assert config.scale_weights == (0.3, 0.3, 0.4)
 
     def test_dm8config_inherits_dm6config(self):
         """DM8Config は DM6Config を継承している。"""
@@ -175,11 +175,11 @@ class TestDM8Config:
 
 class TestDM8Result:
     def test_default_scale_weights_used(self):
-        """generate_dm8_maze 結果の scale_weights_used はデフォルト (0.2, 0.3, 0.5)。"""
+        """generate_dm8_maze 結果の scale_weights_used はデフォルト (0.3, 0.3, 0.4)。"""
         image = _make_gradient_image(32, 32)
         config = DM8Config(difficulty="easy")
         result = generate_dm8_maze(image, config)
-        assert result.scale_weights_used == (0.2, 0.3, 0.5)
+        assert result.scale_weights_used == (0.3, 0.3, 0.4)
 
     def test_default_coarse_size_used(self):
         """generate_dm8_maze 結果の coarse_size_used はデフォルト 4。"""

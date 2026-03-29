@@ -104,8 +104,8 @@ CATEGORIES: list[tuple[str, Image.Image]] = [
 # ---------------------------------------------------------------------------
 
 def measure_dm7(image: Image.Image) -> tuple[float, float]:
-    """DM-7 = DM-6 with passage_ratio=0.10 でSSIM計測。(ssim, elapsed)"""
-    cfg = DM6Config(passage_ratio=0.10)
+    """DM-7 = DM-6 with passage_ratio=0.10, difficulty=hard でSSIM計測。(ssim, elapsed)"""
+    cfg = DM6Config(passage_ratio=0.10, difficulty="hard")
     t0 = time.perf_counter()
     result = generate_dm6_maze(image, cfg)
     elapsed = time.perf_counter() - t0
@@ -113,8 +113,8 @@ def measure_dm7(image: Image.Image) -> tuple[float, float]:
 
 
 def measure_dm8(image: Image.Image) -> tuple[float, float]:
-    """DM-8 マルチスケール（デフォルト scale_weights=(0.2,0.3,0.5)）でSSIM計測。(ssim, elapsed)"""
-    cfg = DM8Config(passage_ratio=0.10)  # 同条件で比較
+    """DM-8 マルチスケール（デフォルト scale_weights=(0.3,0.3,0.4), difficulty=hard）でSSIM計測。(ssim, elapsed)"""
+    cfg = DM8Config(passage_ratio=0.10, difficulty="hard")  # 同条件で比較
     t0 = time.perf_counter()
     result = generate_dm8_maze(image, cfg)
     elapsed = time.perf_counter() - t0

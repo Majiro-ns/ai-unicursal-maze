@@ -126,7 +126,11 @@ class TestDM8MultiscaleConsistency:
 
     def test_dm8_multiscale_different_weights_affect_output(self):
         """異なる scale_weights は異なる密度マップを生成すること"""
-        gray = np.linspace(0, 1, 64 * 64).reshape(64, 64)
+        # 高周波パターン: スケール間で明確な差を生む（線形グラジェントは全スケールで均質になりテストに不向き）
+        x = np.linspace(0, 1, 64)
+        low_freq = np.outer(x, x)
+        high_freq = 0.4 * np.outer(np.sin(10 * np.pi * x), np.sin(10 * np.pi * x))
+        gray = np.clip(low_freq + high_freq, 0.0, 1.0)
         out1 = build_multiscale_density_map(gray, 20, 20, scale_weights=(0.6, 0.3, 0.1))
         out2 = build_multiscale_density_map(gray, 20, 20, scale_weights=(0.1, 0.3, 0.6))
         # 完全一致はしないはず（重みが異なるため）
