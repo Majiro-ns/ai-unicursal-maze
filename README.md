@@ -196,17 +196,17 @@ run_app.bat
 | `extra_removal_rate` | **0.5** | ループ密度制御（暗部にループ追加） |
 | `use_image_guided` | **True** | 画像誘導ルーティング（暗→明の最短経路） |
 
-### SSIM 実績（DM-7 passage_ratio=0.10 ベンチマーク）
+### Gallery（SSIM ベンチマーク, DM-7 masterpiece preset）
 
-MASTERPIECE_PRESET（`passage_ratio=0.10`, `grid_size=8`, `cell_size_px=20`）での実測値:
+| カテゴリ | 生成結果 | SSIM |
+|----------|---------|------|
+| Logo | ![logo](examples/logo_maze.png) | 0.5781 |
+| Anime | ![anime](examples/anime_maze.png) | 0.5389 |
+| Portrait | ![portrait](examples/portrait_maze.png) | 0.5375 |
+| Landscape | ![landscape](examples/landscape_maze.png) | 0.4930 |
+| Photo | ![photo](examples/photo_maze.png) | 0.0689 |
 
-| 入力カテゴリ | SSIM | 評価 |
-|---|---|---|
-| Logo（高コントラスト） | **0.5781** | good ✅ |
-| Anime（輪郭強調） | **0.5389** | good ✅ |
-| Portrait（顔写真） | **0.5375** | good ✅ |
-| Landscape（風景） | **0.4930** | fair ✅ |
-| Photo（実写） | 0.0689 | — |
+> `passage_ratio=0.10`（v0.6.0）での実測値。スコアが高いほど元画像の視覚的再現度が高い。
 
 - DM-7 実装前（`passage_ratio=0.50` 固定）: gradient SSIM = **0.4453**（旧天井）
 - `passage_ratio=0.10` 採用で gradient SSIM = **0.6149**（+38% 改善）

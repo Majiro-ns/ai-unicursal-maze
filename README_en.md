@@ -48,18 +48,16 @@ print(f"SSIM: {result.ssim_score:.4f}")  # expect 0.60–0.65
 
 ## Gallery
 
-SSIM benchmark results — `passage_ratio=0.10`, `grid_size=8`, `cell_size_px=20` (DM-7 masterpiece preset):
+| Category | Example | SSIM Score |
+|----------|---------|------------|
+| Logo | ![logo](examples/logo_maze.png) | 0.5781 |
+| Anime | ![anime](examples/anime_maze.png) | 0.5389 |
+| Portrait | ![portrait](examples/portrait_maze.png) | 0.5375 |
+| Landscape | ![landscape](examples/landscape_maze.png) | 0.4930 |
+| Photo | ![photo](examples/photo_maze.png) | 0.0689 |
 
-| Category  | Description                        | Measured SSIM | Rating   |
-|-----------|------------------------------------|---------------|----------|
-| Logo      | High-contrast edges, clean lines   | **0.5781**    | good ✅  |
-| Anime     | Outline emphasis, flat fill        | **0.5389**    | good ✅  |
-| Portrait  | Face / hair detail preserved       | **0.5375**    | good ✅  |
-| Landscape | Horizon lines, sky gradients       | **0.4930**    | fair ✅  |
-| Photo     | Real photograph (complex tones)    | 0.0689        | —        |
-
-> **Note:** SSIM measures structural similarity between the solved path and the source image.
-> A higher score means the maze path more faithfully reconstructs the original image.
+> SSIM scores measured with `passage_ratio=0.10` (v0.6.0).
+> Higher scores indicate better visual reproduction of the original image.
 > Run `maze-artisan optimize --image your_photo.jpg` to generate your own.
 
 ---
