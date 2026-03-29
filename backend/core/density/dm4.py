@@ -104,6 +104,9 @@ class DM4Config(DM2Config):
     fill_cells: bool = True
     # Gaussian blur 半径（fill_cells=True 時のみ有効。0=無効）
     blur_radius: float = 2.0
+    # 通路幅比率（cell_size に対する割合。0.5=セル半分, 0.15=細い通路）
+    # range: 0.1〜0.8。小さい値ほど通路が細くなりSSIM向上の余地が生まれる
+    passage_ratio: float = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +231,7 @@ def generate_dm4_maze(
         thickness_range=config.tonal_thickness_range,
         fill_cells=config.fill_cells,
         blur_radius=config.blur_radius,
+        passage_ratio=config.passage_ratio,
     )
 
     svg = maze_to_svg_tonal(

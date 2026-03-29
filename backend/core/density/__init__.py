@@ -42,6 +42,7 @@ MASTERPIECE_PRESET: dict = {
     "wall_color_max": 175,
     "variable_cell_size": True,
     "use_gradient_walls": True,  # Phase 4: SVG linearGradient 壁色グラデーション
+    "passage_ratio": 0.15,       # DM-7: 通路幅比率（SSIM向上のため細め）
 }
 
 # Path-First Masterpiece V2: 経路優先パイプライン（I4+F3+G1+H2+K1）
@@ -122,6 +123,8 @@ def generate_density_maze(
     bright_threshold: float = 0.7,
     path_thickness_dark: float = 6.0,
     path_thickness_bright: float = 1.0,
+    # DM-7: 通路幅比率（この旧パイプラインでは未使用。DM4/DM6パイプライン用）
+    passage_ratio: float = 0.5,
 ) -> DensityMazeResult:
     """
     密度迷路パイプライン（Phase 1/2 共用）。

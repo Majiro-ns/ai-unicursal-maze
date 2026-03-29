@@ -153,6 +153,14 @@ def generate_dm6_maze(
         config = DM6Config()
 
     # ------------------------------------------------------------------
+    # passage_ratio バリデーション（0.1〜0.8）
+    # ------------------------------------------------------------------
+    if not (0.1 <= config.passage_ratio <= 0.8):
+        raise ValueError(
+            f"passage_ratio must be between 0.1 and 0.8, got {config.passage_ratio}"
+        )
+
+    # ------------------------------------------------------------------
     # difficulty の解決（difficulty_score が優先）
     # ------------------------------------------------------------------
     if config.difficulty_score is not None:

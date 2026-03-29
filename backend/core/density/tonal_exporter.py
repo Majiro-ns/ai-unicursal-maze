@@ -104,6 +104,7 @@ def maze_to_png_tonal(
     thickness_range: float = 0.5,
     fill_cells: bool = True,
     blur_radius: float = 2.0,
+    passage_ratio: float = 0.5,
 ) -> bytes:
     """
     8 段階グレースケール壁で PNG 迷路を描画する（アンチエイリアス付き）。
@@ -171,7 +172,7 @@ def maze_to_png_tonal(
                 draw.rectangle([x0, y0, x1, y1], fill=grade)
 
         # 通路部分を白(255)で彫り込む
-        passage_width = max(render_scale, int(cell_size * 0.5))
+        passage_width = max(render_scale, int(cell_size * passage_ratio))
         hw = passage_width // 2
 
         for r in range(grid.rows):

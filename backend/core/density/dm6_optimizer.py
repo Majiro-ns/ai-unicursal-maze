@@ -36,36 +36,40 @@ logger = logging.getLogger(__name__)
 # anime:     輪郭強調 → 高 edge_weight, 中間 tonal_levels
 CATEGORY_CONSTRAINTS: Dict[str, Dict[str, Any]] = {
     "portrait": {
-        "grid_size":    (8,  16),
-        "thickness":    (1.5, 3.0),
-        "extra_removal":(0.0, 0.5),
-        "edge_weight":  (0.3, 1.0),
+        "grid_size":     (8,  16),
+        "thickness":     (1.5, 3.0),
+        "extra_removal": (0.0, 0.5),
+        "edge_weight":   (0.3, 1.0),
         "dark_threshold":(0.1, 0.4),
-        "tonal_levels": (8,  16),
+        "tonal_levels":  (8,  16),
+        "passage_ratio": (0.10, 0.40),
     },
     "landscape": {
-        "grid_size":    (4,  12),
-        "thickness":    (1.0, 2.5),
-        "extra_removal":(0.0, 0.8),
-        "edge_weight":  (0.0, 0.6),
+        "grid_size":     (4,  12),
+        "thickness":     (1.0, 2.5),
+        "extra_removal": (0.0, 0.8),
+        "edge_weight":   (0.0, 0.6),
         "dark_threshold":(0.15, 0.5),
-        "tonal_levels": (4,  12),
+        "tonal_levels":  (4,  12),
+        "passage_ratio": (0.10, 0.40),
     },
     "logo": {
-        "grid_size":    (4,  10),
-        "thickness":    (1.0, 2.0),
-        "extra_removal":(0.0, 0.3),
-        "edge_weight":  (0.5, 1.0),
+        "grid_size":     (4,  10),
+        "thickness":     (1.0, 2.0),
+        "extra_removal": (0.0, 0.3),
+        "edge_weight":   (0.5, 1.0),
         "dark_threshold":(0.1, 0.35),
-        "tonal_levels": (2,   6),
+        "tonal_levels":  (2,   6),
+        "passage_ratio": (0.10, 0.40),
     },
     "anime": {
-        "grid_size":    (6,  14),
-        "thickness":    (1.5, 3.0),
-        "extra_removal":(0.0, 0.4),
-        "edge_weight":  (0.4, 1.0),
+        "grid_size":     (6,  14),
+        "thickness":     (1.5, 3.0),
+        "extra_removal": (0.0, 0.4),
+        "edge_weight":   (0.4, 1.0),
         "dark_threshold":(0.1, 0.4),
-        "tonal_levels": (6,  14),
+        "tonal_levels":  (6,  14),
+        "passage_ratio": (0.10, 0.40),
     },
 }
 
@@ -142,13 +146,15 @@ def optimize_for_image(
         ew_min, ew_max = constraints["edge_weight"]
         dt_min, dt_max = constraints["dark_threshold"]
         tl_min, tl_max = constraints["tonal_levels"]
+        pr_min, pr_max = constraints["passage_ratio"]
 
-        grid_size     = trial.suggest_int("grid_size", gs_min, gs_max)
-        thickness     = trial.suggest_float("thickness", tk_min, tk_max)
+        grid_size      = trial.suggest_int("grid_size", gs_min, gs_max)
+        thickness      = trial.suggest_float("thickness", tk_min, tk_max)
         _extra_removal = trial.suggest_float("extra_removal", er_min, er_max)  # stored only
-        edge_weight   = trial.suggest_float("edge_weight", ew_min, ew_max)
+        edge_weight    = trial.suggest_float("edge_weight", ew_min, ew_max)
         dark_threshold = trial.suggest_float("dark_threshold", dt_min, dt_max)
-        tonal_levels  = trial.suggest_int("tonal_levels", tl_min, tl_max)
+        tonal_levels   = trial.suggest_int("tonal_levels", tl_min, tl_max)
+        passage_ratio  = trial.suggest_float("passage_ratio", pr_min, pr_max)
 
         return DM4Config(
             grid_rows=grid_size,
@@ -156,6 +162,7 @@ def optimize_for_image(
             tonal_thickness_range=float(thickness),
             edge_weight=float(edge_weight),
             tonal_grades=_levels_to_grades(tonal_levels),
+            passage_ratio=float(passage_ratio),
         )
 
     def objective(trial: "optuna.Trial") -> float:
