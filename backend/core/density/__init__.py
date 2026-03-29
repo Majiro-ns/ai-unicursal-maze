@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 import numpy as np
 from PIL import Image
 
+from .dm4 import DM4Config, DM4Result, generate_dm4_maze, generate_dm4_maze_photo, PHOTO_PRESET
 from .dm5 import DM5Config, DM5Result, generate_dm5_maze, PRINT_FORMATS
 from .dm6 import DM6Config, DM6Result, generate_dm6_maze, DIFFICULTY_PARAMS, VALID_DIFFICULTIES
 from .dm6_optimizer import optimize_for_image, generate_preset, load_preset, save_preset, CATEGORY_CONSTRAINTS, VALID_CATEGORIES
